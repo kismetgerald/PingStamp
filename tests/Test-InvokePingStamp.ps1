@@ -166,6 +166,24 @@ $stamped = Get-StampedLine -Lines $r.Lines
 Test-That "switches named like common parameters pass through ($($pingArgs -join ' '))" (
     $r.ExitCode -eq 0 -and $stamped.Count -eq 1 -and @($stamped -match 'PING').Count -eq 0)
 
+# --- Lost replies -------------------------------------------------------------
+# 192.0.2.1 (TEST-NET-1) is reserved for documentation and never answers.
+
+if ($onWindows) { $dropArgs = '-n', '2', '-w', '500', '192.0.2.1' }
+else { $dropArgs = '-c', '3', '-W', '1', '192.0.2.1' }
+$r = Invoke-Child -ArgumentList (@('-File', $script) + $dropArgs)
+Test-That 'lost replies get stamped lines' ((Get-StampedLine -Lines $r.Lines).Count -ge 1)
+if (-not $onWindows -and -not $onMac) {
+    Test-That "Linux: lost replies show as 'no answer yet' (-O added)" (
+        @($r.Lines -match "$stampPattern.*no answer yet").Count -ge 1)
+    $r = Invoke-Child -ArgumentList (@('-File', $script, '-HideDrops') + $dropArgs)
+    Test-That 'Linux: -HideDrops leaves -O out' (@($r.Lines -match 'no answer yet').Count -eq 0)
+}
+
+$r = Invoke-Child -ArgumentList '-File', $script, '-HideDrops', $count, '1', '127.0.0.1'
+Test-That '-HideDrops is accepted and not passed to ping' (
+    $r.ExitCode -eq 0 -and (Get-StampedLine -Lines $r.Lines).Count -eq 1)
+
 # --- Pipeline -----------------------------------------------------------------
 
 $log = Join-Path -Path $tempDir -ChildPath "pingstamp-test-$PID.log"

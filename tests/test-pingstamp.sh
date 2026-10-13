@@ -111,6 +111,26 @@ if [ "$OS" = linux ]; then
     check "options after the target (Linux)" test "$(stamped_count "$TMP/order")" -eq 2
 fi
 
+# --- Lost replies -------------------------------------------------------------
+# 192.0.2.1 (TEST-NET-1) is reserved for documentation and never answers.
+
+"$SHELL_UNDER_TEST" "$SCRIPT" -c 3 -W 1 192.0.2.1 > "$TMP/drops" 2>&1
+check "lost replies get stamped lines" test "$(stamped_count "$TMP/drops")" -ge 1
+
+if [ "$OS" = linux ]; then
+    check "Linux: lost replies show as 'no answer yet' (-O added)" \
+        grep -qE "${STAMP_RE}no answer yet" "$TMP/drops"
+    "$SHELL_UNDER_TEST" "$SCRIPT" --hide-drops -c 3 -W 1 192.0.2.1 > "$TMP/hidden" 2>&1
+    check "Linux: --hide-drops leaves -O out" test "$(grep -c 'no answer yet' "$TMP/hidden")" -eq 0
+    "$SHELL_UNDER_TEST" "$SCRIPT" -O -c 3 -W 1 192.0.2.1 > "$TMP/both" 2>&1
+    check "Linux: -O given by the user as well still works" \
+        grep -qE "${STAMP_RE}no answer yet" "$TMP/both"
+fi
+
+"$SHELL_UNDER_TEST" "$SCRIPT" --hide-drops -c 1 127.0.0.1 > "$TMP/hide-ok" 2>&1
+check "--hide-drops is accepted" test $? -eq 0
+check "--hide-drops is not passed to ping" test "$(stamped_count "$TMP/hide-ok")" -eq 1
+
 # --- --log --------------------------------------------------------------------
 
 log=$TMP/ping.log

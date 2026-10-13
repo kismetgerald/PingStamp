@@ -74,7 +74,7 @@ chmod +x pingstamp.sh
 ## Usage
 
 Both scripts take exactly the same arguments as the native `ping` on that
-system, plus an option to keep a log. The target is a hostname or IPv4
+system, plus options to keep a log and to control how lost replies are shown. The target is a hostname or IPv4
 address. Windows and Linux `ping` accept options before or after the target;
 macOS `ping` needs them first.
 
@@ -99,6 +99,7 @@ Script options:
 | Option | Description |
 | --- | --- |
 | `-LogFile <path>` | Also append every line, as shown, to a log file. Anywhere in the arguments; `-LogFile:<path>` also works |
+| `-HideDrops` | On Linux, don't add `-O` (see [Lost replies](#lost-replies)). No effect elsewhere |
 | `-?` | Show help (or `Get-Help .\Invoke-PingStamp.ps1 -Full`) |
 | `-Version` | Show the script version (use it on its own) |
 
@@ -116,6 +117,7 @@ Script options:
 | Option | Description |
 | --- | --- |
 | `--log FILE` | Also append every line, as shown, to a log file. Anywhere in the arguments; `--log=FILE` also works |
+| `--hide-drops` | On Linux, don't add `-O` (see [Lost replies](#lost-replies)). No effect elsewhere |
 | `--help` | Show help (first argument only) |
 | `--version` | Show the script version (first argument only) |
 
@@ -132,6 +134,26 @@ statistics after Ctrl+C:
 
 The log is appended to, not overwritten, and created if it doesn't exist. If
 it can't be written, the script exits with code 2 before pinging.
+
+### Lost replies
+
+The timestamps are most useful for seeing *when* replies were lost, so each
+lost reply should produce a line:
+
+- **Windows** and **macOS** `ping` already print one (`Request timed out.`,
+  `Request timeout for icmp_seq 4`), and it gets a timestamp like any reply.
+- **Linux** `ping` prints nothing for a lost reply; you would only notice a
+  gap in `icmp_seq`. So on Linux, PingStamp adds `-O`, and each lost reply
+  shows up as a timestamped line:
+
+  ```text
+  2026-10-13 17:01:48:916 EDT no answer yet for icmp_seq=1
+  ```
+
+  This applies when `ping` is iputils (the standard Linux `ping`, 2012 or
+  later). Use `--hide-drops` / `-HideDrops` to turn it off. The last request
+  of a `-c` run is not reported this way, because `ping` exits right after
+  sending it; it shows only in the statistics.
 
 Native `ping` help is still available: `ping -h` (Linux), `man ping` (macOS),
 `ping /?` (Windows).

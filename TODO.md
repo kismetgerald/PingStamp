@@ -20,10 +20,12 @@ user-visible changes in [CHANGELOG.md](CHANGELOG.md).
   instead of `Tee-Object` or a redirect. *Done: appends, may appear
   anywhere, fails before pinging if the log can't be written. Tested,
   including Ctrl+C on every platform and Constrained Language Mode.*
-- [ ] **3. Show dropped replies on Linux.** iputils ping prints nothing for a
+- [x] **3. Show dropped replies on Linux.** iputils ping prints nothing for a
   lost reply, so timestamps can't show when a drop happened. Add `-O` (it
   prints `no answer yet for icmp_seq=N`) on iputils unless the user already
-  passed it.
+  passed it. *Done: added automatically on iputils ≥ s20121221 (detected
+  with `ping -V`); `--hide-drops` / `-HideDrops` turns it off. A duplicate
+  `-O` is harmless, so the user's own `-O` needs no special handling.*
 - [ ] **4. Ctrl+C under Git Bash.** Its terminal (mintty) usually kills
   native Windows programs outright, which probably loses the statistics.
   Test it, then fix or document.

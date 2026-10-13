@@ -14,9 +14,12 @@ https://github.com/kismetgerald/PingStamp (MIT).
 - **Native passthrough.** Every argument goes to `ping` unchanged and in
   order. Where options may go relative to the target is up to the native
   `ping`: Windows and Linux accept either side, macOS needs them first.
-  Don't add options that could clash with a native switch on any platform. The scripts' own options are `-LogFile`, `-?` and `-Version`
-  (PowerShell), and `--log`, `--help` and `--version` (Bash). The log option
-  is taken out of the arguments wherever it appears; the rest go to `ping`.
+  Don't add options that could clash with a native switch on any platform. The scripts' own options are `-LogFile`, `-HideDrops`, `-?` and
+  `-Version` (PowerShell), and `--log`, `--hide-drops`, `--help` and
+  `--version` (Bash). The log and hide-drops options are taken out of the
+  arguments wherever they appear; the rest go to `ping`. The one deliberate
+  addition to `ping`'s arguments: `-O` on iputils (Linux) ≥ s20121221,
+  detected with `ping -V`, so lost replies get a line.
   Log writes must cover every output path: normal, Ctrl+C (the `finally`
   drain), and the Constrained Language Mode fallback.
 - **PowerShell: no `param()` block, no `[CmdletBinding()]`.** Declared and

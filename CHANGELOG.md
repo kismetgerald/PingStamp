@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   after Ctrl+C, which `tee` and `Tee-Object` lose. The option may appear
   anywhere in the arguments. An unwritable log stops the script with exit
   code 2 before pinging.
+- Lost replies are visible on Linux. iputils `ping` prints nothing for a
+  lost reply, so both scripts now add `-O` there, and each lost reply shows
+  as a timestamped `no answer yet for icmp_seq=N` line. Turn it off with
+  `--hide-drops` (bash) or `-HideDrops` (PowerShell). Windows and macOS
+  `ping` already report lost replies.
 
 ### Fixed
 

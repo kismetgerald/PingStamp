@@ -38,6 +38,12 @@ https://github.com/kismetgerald/PingStamp/blob/main/CHANGELOG.md
     target; macOS ping needs them first. Run "ping /?" (Windows) or "ping -h"
     (Linux) to list them.
 
+    Lost replies: Windows and macOS ping report each one ("Request timed
+    out.", "Request timeout for icmp_seq N"), and those lines get a timestamp
+    like any other. Linux ping prints nothing for a lost reply, so on Linux
+    the script adds -O, which prints "no answer yet for icmp_seq=N" instead.
+    Use -HideDrops to turn that off; it has no effect elsewhere.
+
     To keep a log, use -LogFile <path>. Every line, timestamped as on screen,
     is appended to that file as it arrives, including ping's statistics after
     Ctrl+C. -LogFile is the script's own option and may appear anywhere in the
@@ -97,8 +103,8 @@ https://github.com/kismetgerald/PingStamp/blob/main/CHANGELOG.md
     (-Verbose, -WarningAction, ...), would capture native ping switches such
     as -t, -v, -w and -i.
 
-    The script's own options are -LogFile and -Version. Exact names like
-    these can't clash with ping's single-letter switches.
+    The script's own options are -LogFile, -HideDrops and -Version. Exact
+    names like these can't clash with ping's single-letter switches.
 
     Exit code is ping's own exit code; 2 for a usage error or a log file that
     can't be written.
@@ -246,13 +252,17 @@ if ($args.Count -eq 1 -and "$($args[0])" -eq '-Version') {
     exit 0
 }
 
-# -LogFile is this script's own option: take it and its path out of the
-# arguments, which are otherwise all for ping. It may appear anywhere.
+# -LogFile and -HideDrops are this script's own options: take them out of
+# the arguments, which are otherwise all for ping. They may appear anywhere.
 # "-LogFile:path" arrives as "-LogFile:" followed by the path.
 $script:LogPath = $null
+$hideDrops = $false
 $remaining = @()
 for ($i = 0; $i -lt $args.Count; $i++) {
-    if ("$($args[$i])" -in '-LogFile', '-LogFile:') {
+    if ("$($args[$i])" -eq '-HideDrops') {
+        $hideDrops = $true
+    }
+    elseif ("$($args[$i])" -in '-LogFile', '-LogFile:') {
         if ($i + 1 -ge $args.Count) {
             $Host.UI.WriteErrorLine('-LogFile needs a file path.')
             exit 2
@@ -266,7 +276,7 @@ for ($i = 0; $i -lt $args.Count; $i++) {
 }
 
 if ($remaining.Count -eq 0) {
-    $Host.UI.WriteErrorLine('Usage: Invoke-PingStamp.ps1 [-LogFile <path>] [ping options] <hostname | IPv4 address>')
+    $Host.UI.WriteErrorLine('Usage: Invoke-PingStamp.ps1 [-LogFile <path>] [-HideDrops] [ping options] <hostname | IPv4 address>')
     $Host.UI.WriteErrorLine('All other arguments are passed to ping. For details, run:')
     $Host.UI.WriteErrorLine("  Get-Help '$PSCommandPath' -Full")
     exit 2
@@ -301,6 +311,20 @@ if ($script:OnWindows) {
 else {
     $pingPath = (Get-Command -Name ping -CommandType Application -ErrorAction Stop |
         Select-Object -First 1).Source
+
+    # Linux ping (iputils) prints nothing for a lost reply, so timestamps
+    # couldn't show when a drop happened. -O makes it print "no answer yet
+    # for icmp_seq=N". It arrived in iputils s20121221; other pings fail
+    # "ping -V" or don't mention iputils. A second -O, if the user passed
+    # one too, is harmless. Windows and macOS ping report lost replies
+    # anyway.
+    if (-not $hideDrops) {
+        $pingVersion = (& $pingPath -V 2>&1) -join ' '
+        if ($pingVersion -match 'iputils' -and $pingVersion -match '(\d{8})' -and
+            [int]$Matches[1] -ge 20121221) {
+            $pingArguments = @('-O') + $pingArguments
+        }
+    }
 }
 
 # --- Run ping and stamp its output -------------------------------------------
