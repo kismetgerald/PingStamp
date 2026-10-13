@@ -159,6 +159,10 @@ Native `ping` help is still available: `ping -h` (Linux), `man ping` (macOS),
 - bash timestamp fallbacks for older bash and macOS (GNU `date`, `perl`),
   exercised on Debian
 
+Windows Ctrl+C behavior is checked with
+[`tests/ctrlc_harness.py`](tests/ctrlc_harness.py), which sends a real
+console Ctrl+C to the script.
+
 ## Versioning
 
 PingStamp follows [Semantic Versioning](https://semver.org/). Every version is
