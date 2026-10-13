@@ -1,5 +1,7 @@
 # PingStamp
 
+[![CI](https://github.com/kismetgerald/PingStamp/actions/workflows/ci.yml/badge.svg)](https://github.com/kismetgerald/PingStamp/actions/workflows/ci.yml)
+
 Run the system `ping` command with a timestamp on every reply line.
 
 PingStamp is two small, self-contained scripts, one for PowerShell and one for
@@ -72,7 +74,8 @@ chmod +x pingstamp.sh
 ## Usage
 
 Both scripts take exactly the same arguments as the native `ping` on that
-system, in any order. The target is a hostname or IPv4 address.
+system. The target is a hostname or IPv4 address. Windows and Linux `ping`
+accept options before or after the target; macOS `ping` needs them first.
 
 ### PowerShell
 
@@ -152,16 +155,32 @@ Native `ping` help is still available: `ping -h` (Linux), `man ping` (macOS),
 - **Git Bash.** Use dash-style switches (`-n 4`), not slash-style (`/n 4`).
   MSYS treats arguments that start with `/` as paths and rewrites them.
 
-## Tested on
+## Testing
 
-- Windows 11: Windows PowerShell 5.1, PowerShell 7.6, Git Bash (bash 5.3)
-- Debian 13 (WSL): bash 5.2, iputils ping 20240905
-- bash timestamp fallbacks for older bash and macOS (GNU `date`, `perl`),
-  exercised on Debian
+Every push runs the tests in [`tests/`](tests) on GitHub Actions:
 
-Windows Ctrl+C behavior is checked with
-[`tests/ctrlc_harness.py`](tests/ctrlc_harness.py), which sends a real
-console Ctrl+C to the script.
+| Script | Tested with |
+| --- | --- |
+| `Invoke-PingStamp.ps1` | Windows PowerShell 5.1; PowerShell 7 on Windows, Ubuntu and macOS |
+| `pingstamp.sh` | bash on Ubuntu and macOS, plus macOS's built-in bash 3.2 |
+
+The tests ping `127.0.0.1` only. They check the timestamps, that native
+switches pass through, exit codes, and Ctrl+C. For PowerShell they also check
+redirection, `Select-Object -First`, and Constrained Language Mode. Windows
+Ctrl+C is tested with [`tests/ctrlc_harness.py`](tests/ctrlc_harness.py)
+(Python), which sends a real console Ctrl+C. Git Bash is not covered by the
+automated tests yet.
+
+To run the tests locally:
+
+```bash
+bash tests/test-pingstamp.sh
+```
+
+```powershell
+pwsh -File tests/Test-InvokePingStamp.ps1
+powershell -ExecutionPolicy Bypass -File tests\Test-InvokePingStamp.ps1
+```
 
 ## Versioning
 

@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: ShellCheck
+        run: shellcheck pingstamp.sh tests/test-pingstamp.sh
+
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module -Name PSScriptAnalyzer -Scope CurrentUser
+          $results = @(
+              Invoke-ScriptAnalyzer -Path ./Invoke-PingStamp.ps1 -Severity Warning, Error, Information
+              # The test script reports to the console on purpose.
+              Invoke-ScriptAnalyzer -Path ./tests/Test-InvokePingStamp.ps1 -Severity Warning, Error `
+                  -ExcludeRule PSAvoidUsingWriteHost
+          )
+          $results | Format-Table -AutoSize -Wrap RuleName, ScriptName, Line, Message
+          if ($results.Count -gt 0) { exit 1 }
+
+  bash:
+    name: Bash (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { label: Ubuntu, os: ubuntu-latest, bash: bash }
+          - { label: macOS, os: macos-latest, bash: bash }
+          - { label: macOS bash 3.2, os: macos-latest, bash: /bin/bash }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test pingstamp.sh
+        run: bash tests/test-pingstamp.sh
+        env:
+          BASH_UNDER_TEST: ${{ matrix.bash }}
+
+  powershell:
+    name: PowerShell (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { label: Windows PowerShell 5.1, os: windows-latest, shell: powershell }
+          - { label: PowerShell 7 on Windows, os: windows-latest, shell: pwsh }
+          - { label: PowerShell 7 on Ubuntu, os: ubuntu-latest, shell: pwsh }
+          - { label: PowerShell 7 on macOS, os: macos-latest, shell: pwsh }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test Invoke-PingStamp.ps1
+        shell: ${{ matrix.shell }}
+        run: ./tests/Test-InvokePingStamp.ps1

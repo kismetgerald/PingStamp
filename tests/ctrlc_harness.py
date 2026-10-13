@@ -8,10 +8,14 @@ console's screen text.
 
 Usage:
     python -I tests/ctrlc_harness.py DELAY COMMAND
+    python -I tests/ctrlc_harness.py DELAY PROGRAM [ARGUMENT ...]
+
+COMMAND is one command-line string. Passing the program and its arguments
+separately avoids nested quotes, which Windows PowerShell 5.1 mangles.
 
 Examples (from the repository root):
     python -I tests/ctrlc_harness.py 3.5 "pwsh -NoProfile -File Invoke-PingStamp.ps1 -t 127.0.0.1"
-    python -I tests/ctrlc_harness.py 3.5 "powershell -NoProfile -ExecutionPolicy Bypass -File Invoke-PingStamp.ps1 -t 127.0.0.1"
+    python -I tests/ctrlc_harness.py 3.5 powershell -NoProfile -ExecutionPolicy Bypass -File Invoke-PingStamp.ps1 -t 127.0.0.1
 
 Expected: the reply lines, one blank line, then ping's full statistics
 ending with "Control-C".
@@ -77,9 +81,10 @@ def read_screen():
 
 
 def main():
-    if len(sys.argv) != 3:
+    if len(sys.argv) < 3:
         sys.exit(__doc__)
-    delay, command = float(sys.argv[1]), sys.argv[2]
+    delay = float(sys.argv[1])
+    command = sys.argv[2] if len(sys.argv) == 3 else sys.argv[2:]
 
     startup = subprocess.STARTUPINFO()
     startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW

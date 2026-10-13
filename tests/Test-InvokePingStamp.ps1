@@ -1,0 +1,220 @@
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+    Smoke tests for Invoke-PingStamp.ps1. Pings 127.0.0.1 only.
+
+.DESCRIPTION
+    Runs Invoke-PingStamp.ps1 in child processes of the same PowerShell that
+    runs this script, so run it once with Windows PowerShell 5.1 and once with
+    PowerShell 7. Works on Windows, Linux and macOS.
+
+    The Windows Ctrl+C test needs Python (tests/ctrlc_harness.py) and is
+    skipped without it.
+
+    Exits 1 if any test fails.
+
+.EXAMPLE
+    powershell -NoProfile -ExecutionPolicy Bypass -File tests\Test-InvokePingStamp.ps1
+
+.EXAMPLE
+    pwsh -NoProfile -File tests/Test-InvokePingStamp.ps1
+#>
+
+Set-StrictMode -Version Latest
+
+# An error inside a test is a failed test, not something to skip past.
+trap {
+    Write-Host "FAIL (error) $_"
+    $script:failures++
+    continue
+}
+
+$root = Split-Path -Path $PSScriptRoot -Parent
+$script = Join-Path -Path $root -ChildPath 'Invoke-PingStamp.ps1'
+$shell = (Get-Process -Id $PID).Path
+$onWindows = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
+$onMac = -not $onWindows -and (uname -s) -eq 'Darwin'
+$stampPattern = '^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d:\d{3} [A-Za-z0-9+-]+ '
+$tempDir = [IO.Path]::GetTempPath()
+$script:failures = 0
+
+if ($onWindows) {
+    $pingPath = Join-Path -Path $env:SystemRoot -ChildPath 'System32\PING.EXE'
+    $count = '-n'
+    $size = '-l'
+    $continuous = '-t'
+}
+else {
+    $pingPath = (Get-Command -Name ping -CommandType Application | Select-Object -First 1).Source
+    $count = '-c'
+    $size = '-s'
+    $continuous = $null     # continuous is the default
+}
+
+function Test-That {
+    param([string] $Name, [bool] $Condition)
+    if ($Condition) { Write-Host "ok   $Name" }
+    else { Write-Host "FAIL $Name"; $script:failures++ }
+}
+
+function Invoke-Child {
+    # Runs this same PowerShell with the given arguments. Returns the output
+    # lines (stdout and stderr) and the exit code.
+    param([string[]] $ArgumentList)
+    $base = @('-NoProfile', '-NonInteractive')
+    if ($onWindows) { $base += '-ExecutionPolicy', 'Bypass' }
+    $lines = & $shell @base @ArgumentList 2>&1 | ForEach-Object { "$_" }
+    [pscustomobject]@{ Lines = @($lines); ExitCode = $LASTEXITCODE }
+}
+
+function Get-StampedLine {
+    param([string[]] $Lines)
+    # The leading comma keeps a one-line result an array for the caller.
+    , @($Lines | Where-Object { $_ -match $stampPattern })
+}
+
+function Get-MinimumGap {
+    # Smallest gap in milliseconds between consecutive stamped lines.
+    param([string[]] $Lines)
+    $times = foreach ($line in (Get-StampedLine -Lines $Lines)) {
+        [datetime]::ParseExact($line.Substring(0, 23), 'yyyy-MM-dd HH:mm:ss:fff',
+            [cultureinfo]::InvariantCulture)
+    }
+    $gaps = for ($i = 1; $i -lt @($times).Count; $i++) {
+        ($times[$i] - $times[$i - 1]).TotalMilliseconds
+    }
+    if ($gaps) { ($gaps | Measure-Object -Minimum).Minimum } else { 0 }
+}
+
+function Test-CtrlCOutput {
+    # Ctrl+C output: replies, exactly one blank line, then ping's statistics.
+    param([string[]] $Lines, [string] $Label)
+    $stats = @(for ($i = 0; $i -lt $Lines.Count; $i++) {
+        if ($Lines[$i] -match 'statistics') { $i }
+    })
+    Test-That "${Label}: statistics are shown once" ($stats.Count -eq 1)
+    if ($stats.Count -eq 1 -and $stats[0] -ge 2) {
+        $i = $stats[0]
+        Test-That "${Label}: one blank line before the statistics" (
+            [string]::IsNullOrWhiteSpace($Lines[$i - 1]) -and
+            $Lines[$i - 2] -match $stampPattern)
+    }
+    Test-That "${Label}: replies before it are stamped" ((Get-StampedLine -Lines $Lines).Count -ge 2)
+}
+
+Write-Host ("Invoke-PingStamp tests: PowerShell {0} ({1}) on {2}" -f
+    $PSVersionTable.PSVersion, $PSVersionTable.PSEdition, [Environment]::OSVersion.VersionString)
+
+# --- Version and usage --------------------------------------------------------
+
+$version = (Select-String -Path $script -Pattern '^\.VERSION\s+(\S+)').Matches[0].Groups[1].Value
+$r = Invoke-Child -ArgumentList '-File', $script, '-Version'
+Test-That "-Version prints $version" ($r.Lines -contains "Invoke-PingStamp $version")
+
+$r = Invoke-Child -ArgumentList '-File', $script
+Test-That 'no arguments exits 2' ($r.ExitCode -eq 2)
+Test-That 'no arguments prints usage' (@($r.Lines -match '^Usage:').Count -eq 1)
+
+# --- A short run --------------------------------------------------------------
+
+$r = Invoke-Child -ArgumentList '-File', $script, $count, '3', '127.0.0.1'
+$stamped = Get-StampedLine -Lines $r.Lines
+$header = $r.Lines | Where-Object { $_.Trim() } | Select-Object -First 1
+Test-That "$count 3 exits 0" ($r.ExitCode -eq 0)
+Test-That '3 reply lines are stamped' ($stamped.Count -eq 3)
+Test-That 'header line is not stamped' ($header -match '^PING' -and $header -notmatch $stampPattern)
+Test-That 'statistics are not stamped' (
+    @($r.Lines -match 'statistics').Count -eq 1 -and @($stamped -match 'statistics').Count -eq 0)
+$gap = Get-MinimumGap -Lines $r.Lines
+Test-That "lines are stamped as they arrive (smallest gap $gap ms >= 500)" ($gap -ge 500)
+
+# --- Native ping behavior -----------------------------------------------------
+
+& $pingPath $count 1 no-such-host.invalid *> $null
+$nativeExit = $LASTEXITCODE
+$r = Invoke-Child -ArgumentList '-File', $script, $count, '1', 'no-such-host.invalid'
+Test-That "exit code matches ping's for an unknown host ($nativeExit)" ($r.ExitCode -eq $nativeExit)
+Test-That "ping's exit code for an unknown host is non-zero" ($nativeExit -ne 0)
+
+# Options after the target work with Windows and Linux ping; macOS ping
+# needs them first.
+if ($onMac) { $pingArgs = $count, '2', $size, '100', '127.0.0.1' }
+else { $pingArgs = '127.0.0.1', $count, '2', $size, '100' }
+$r = Invoke-Child -ArgumentList (@('-File', $script) + $pingArgs)
+Test-That "native options pass through ($($pingArgs -join ' '))" (
+    $r.ExitCode -eq 0 -and (Get-StampedLine -Lines $r.Lines).Count -eq 2 -and
+    @($r.Lines -match '\b100\b').Count -ge 1)
+
+# Switches that would collide with PowerShell's common parameters if the
+# script declared any (-Verbose, -WarningAction, -InformationAction, ...).
+# On Linux, -v also prints a line before the "PING ..." header.
+if ($onWindows) { $pingArgs = '-n', '1', '-w', '1000', '-i', '64', '-v', '0', '127.0.0.1' }
+else { $pingArgs = '-c', '1', '-v', '-i', '1', '127.0.0.1' }
+$r = Invoke-Child -ArgumentList (@('-File', $script) + $pingArgs)
+$stamped = Get-StampedLine -Lines $r.Lines
+Test-That "switches named like common parameters pass through ($($pingArgs -join ' '))" (
+    $r.ExitCode -eq 0 -and $stamped.Count -eq 1 -and @($stamped -match 'PING').Count -eq 0)
+
+# --- Pipeline -----------------------------------------------------------------
+
+$log = Join-Path -Path $tempDir -ChildPath "pingstamp-test-$PID.log"
+$r = Invoke-Child -ArgumentList '-Command', "& '$script' $count 2 127.0.0.1 > '$log'; exit `$LASTEXITCODE"
+Test-That 'redirected to a file: exits 0' ($r.ExitCode -eq 0)
+Test-That 'redirected to a file: 2 stamped lines' (
+    (Test-Path -Path $log) -and (Get-StampedLine -Lines (Get-Content -Path $log)).Count -eq 2)
+Remove-Item -Path $log -ErrorAction SilentlyContinue
+
+$pingsBefore = @(Get-Process -Name ping -ErrorAction SilentlyContinue).Count
+$watch = [Diagnostics.Stopwatch]::StartNew()
+$r = Invoke-Child -ArgumentList '-Command', "& '$script' $continuous 127.0.0.1 | Select-Object -First 4"
+$watch.Stop()
+Start-Sleep -Milliseconds 500
+Test-That 'Select-Object -First 4: exactly 4 lines' ($r.Lines.Count -eq 4)
+Test-That "Select-Object -First 4: stops promptly ($([int]$watch.Elapsed.TotalSeconds) s)" (
+    $watch.Elapsed.TotalSeconds -lt 15)
+Test-That 'Select-Object -First 4: ping is not left running' (
+    @(Get-Process -Name ping -ErrorAction SilentlyContinue).Count -le $pingsBefore)
+
+# --- Constrained Language Mode ------------------------------------------------
+
+$r = Invoke-Child -ArgumentList '-Command', (
+    "`$ExecutionContext.SessionState.LanguageMode = 'ConstrainedLanguage'; " +
+    "& '$script' $count 2 127.0.0.1; exit `$LASTEXITCODE")
+Test-That 'Constrained Language Mode: exits 0' ($r.ExitCode -eq 0)
+Test-That 'Constrained Language Mode: 2 stamped lines' ((Get-StampedLine -Lines $r.Lines).Count -eq 2)
+
+# --- Ctrl+C -------------------------------------------------------------------
+
+if ($onWindows) {
+    $python = Get-Command -Name python, py -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($python) {
+        $harness = Join-Path -Path $PSScriptRoot -ChildPath 'ctrlc_harness.py'
+        $lines = & $python.Source -I $harness 3.5 $shell -NoProfile -ExecutionPolicy Bypass `
+            -File $script -t 127.0.0.1
+        Test-CtrlCOutput -Lines $lines -Label 'Ctrl+C'
+        Test-That 'Ctrl+C: ends with Control-C' (
+            ($lines | Where-Object { $_.Trim() } | Select-Object -Last 1) -eq 'Control-C')
+    }
+    else {
+        Write-Host 'skip Ctrl+C: Python not found (needed for tests/ctrlc_harness.py)'
+    }
+}
+else {
+    # Job control gives the child its own process group with SIGINT at its
+    # default, so the signal reaches pwsh and ping as a terminal's Ctrl+C would.
+    $out = Join-Path -Path $tempDir -ChildPath "pingstamp-ctrlc-$PID.txt"
+    bash -c 'set -m; "$0" -NoProfile -File "$1" 127.0.0.1 > "$2" 2>&1 & pid=$!; set +m; sleep 4; kill -INT -- -$pid; wait $pid' `
+        $shell $script $out
+    $lines = @(Get-Content -Path $out)
+    Remove-Item -Path $out -ErrorAction SilentlyContinue
+    Test-CtrlCOutput -Lines $lines -Label 'Ctrl+C'
+}
+
+# ------------------------------------------------------------------------------
+
+if ($script:failures -gt 0) {
+    Write-Host "$script:failures test(s) failed"
+    exit 1
+}
+Write-Host 'All tests passed'
