@@ -22,6 +22,10 @@
 
 Set-StrictMode -Version Latest
 
+# GitHub Actions runs PowerShell with 'Stop'. Under Windows PowerShell 5.1,
+# a child's stderr captured with 2>&1 would then become a terminating error.
+$ErrorActionPreference = 'Continue'
+
 # An error inside a test is a failed test, not something to skip past.
 trap {
     Write-Host "FAIL (error) $_"
@@ -51,10 +55,14 @@ else {
     $continuous = $null     # continuous is the default
 }
 
+$script:lastOutput = @()   # output of the latest run, shown when a test fails
+
 function Test-That {
     param([string] $Name, [bool] $Condition)
-    if ($Condition) { Write-Host "ok   $Name" }
-    else { Write-Host "FAIL $Name"; $script:failures++ }
+    if ($Condition) { Write-Host "ok   $Name"; return }
+    Write-Host "FAIL $Name"
+    $script:failures++
+    foreach ($line in $script:lastOutput) { Write-Host "     | $line" }
 }
 
 function Invoke-Child {
@@ -63,8 +71,9 @@ function Invoke-Child {
     param([string[]] $ArgumentList)
     $base = @('-NoProfile', '-NonInteractive')
     if ($onWindows) { $base += '-ExecutionPolicy', 'Bypass' }
-    $lines = & $shell @base @ArgumentList 2>&1 | ForEach-Object { "$_" }
-    [pscustomobject]@{ Lines = @($lines); ExitCode = $LASTEXITCODE }
+    $lines = @(& $shell @base @ArgumentList 2>&1 | ForEach-Object { "$_" })
+    $script:lastOutput = @($lines) + "(exit code $LASTEXITCODE)"
+    [pscustomobject]@{ Lines = $lines; ExitCode = $LASTEXITCODE }
 }
 
 function Get-StampedLine {
@@ -89,6 +98,7 @@ function Get-MinimumGap {
 function Test-CtrlCOutput {
     # Ctrl+C output: replies, exactly one blank line, then ping's statistics.
     param([string[]] $Lines, [string] $Label)
+    $script:lastOutput = $Lines
     $stats = @(for ($i = 0; $i -lt $Lines.Count; $i++) {
         if ($Lines[$i] -match 'statistics') { $i }
     })
@@ -160,8 +170,8 @@ Test-That "switches named like common parameters pass through ($($pingArgs -join
 $log = Join-Path -Path $tempDir -ChildPath "pingstamp-test-$PID.log"
 $r = Invoke-Child -ArgumentList '-Command', "& '$script' $count 2 127.0.0.1 > '$log'; exit `$LASTEXITCODE"
 Test-That 'redirected to a file: exits 0' ($r.ExitCode -eq 0)
-Test-That 'redirected to a file: 2 stamped lines' (
-    (Test-Path -Path $log) -and (Get-StampedLine -Lines (Get-Content -Path $log)).Count -eq 2)
+$script:lastOutput = @(Get-Content -Path $log -ErrorAction SilentlyContinue)
+Test-That 'redirected to a file: 2 stamped lines' ((Get-StampedLine -Lines $script:lastOutput).Count -eq 2)
 Remove-Item -Path $log -ErrorAction SilentlyContinue
 
 $pingsBefore = @(Get-Process -Name ping -ErrorAction SilentlyContinue).Count
