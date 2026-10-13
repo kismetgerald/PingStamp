@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- PowerShell 7 on Linux and macOS: the script failed at the first reply. A
+  variable named `$date` clashed with the `$Date` parameter, because
+  PowerShell variable names ignore case.
+- PowerShell: an internal error no longer ends the script with exit code 0.
 - With Linux `ping -v`, the `PING ...` header line no longer gets a
   timestamp. `-v` prints an extra line first, which was taken for the
   header.

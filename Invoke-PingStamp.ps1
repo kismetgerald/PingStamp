@@ -145,10 +145,11 @@ function Get-ZoneAbbreviation {
         }
     }
     else {
-        # Linux and macOS know the real abbreviation.
-        $date = Get-Command -Name date -CommandType Application -ErrorAction SilentlyContinue |
+        # Linux and macOS know the real abbreviation. (Not "$date": variable
+        # names ignore case, so that would be the [datetime] $Date parameter.)
+        $dateCommand = Get-Command -Name date -CommandType Application -ErrorAction SilentlyContinue |
             Select-Object -First 1
-        if ($date) { $abbreviation = (& $date.Source '+%Z' 2>$null) -join '' }
+        if ($dateCommand) { $abbreviation = (& $dateCommand.Source '+%Z' 2>$null) -join '' }
     }
 
     if (-not $abbreviation) {
@@ -275,6 +276,7 @@ $process = [System.Diagnostics.Process]::Start($startInfo)
 $pending = $null    # line read from ping but not yet written
 $sectionBefore = $script:Section
 $completed = $false
+$exitCode = 1       # replaced by ping's exit code; stays 1 if this script fails
 try {
     while ($true) {
         $sectionBefore = $script:Section

@@ -131,6 +131,7 @@ $r = Invoke-Child -ArgumentList '-File', $script, $count, '3', '127.0.0.1'
 $stamped = Get-StampedLine -Lines $r.Lines
 $header = $r.Lines | Where-Object { $_.Trim() } | Select-Object -First 1
 Test-That "$count 3 exits 0" ($r.ExitCode -eq 0)
+Test-That 'no PowerShell errors in the output' (@($r.Lines -match 'Error:|Exception').Count -eq 0)
 Test-That '3 reply lines are stamped' ($stamped.Count -eq 3)
 Test-That 'header line is not stamped' ($header -match '^PING' -and $header -notmatch $stampPattern)
 Test-That 'statistics are not stamped' (
