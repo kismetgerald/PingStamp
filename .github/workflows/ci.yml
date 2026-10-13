@@ -63,6 +63,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
-      - name: Test Invoke-PingStamp.ps1
-        shell: ${{ matrix.shell }}
+      # A step's shell can't come from the matrix, so there is one step per shell.
+      - name: Test Invoke-PingStamp.ps1 (Windows PowerShell)
+        if: matrix.shell == 'powershell'
+        shell: powershell
+        run: ./tests/Test-InvokePingStamp.ps1
+      - name: Test Invoke-PingStamp.ps1 (PowerShell 7)
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
         run: ./tests/Test-InvokePingStamp.ps1
