@@ -49,8 +49,8 @@ Each script is a single file with no dependencies. Copy it wherever you need it.
 ## Installation
 
 Download the script you need from the
-[latest release](https://github.com/kismetgerald/PingStamp/releases/latest), or
-clone the repository:
+[Releases page](https://github.com/kismetgerald/PingStamp/releases), or clone
+the repository:
 
 ```bash
 git clone https://github.com/kismetgerald/PingStamp.git
@@ -161,12 +161,17 @@ Native `ping` help is still available: `ping -h` (Linux), `man ping` (macOS),
 
 ## Versioning
 
-PingStamp follows [Semantic Versioning](https://semver.org/). Releases are
+PingStamp follows [Semantic Versioning](https://semver.org/). Every version is
 tagged `vMAJOR.MINOR.PATCH`, and changes are listed in
 [CHANGELOG.md](CHANGELOG.md).
 
-To cut a release, update the version in each of these places, then commit and
-tag:
+| Versions | Stage | Published on GitHub as |
+| --- | --- | --- |
+| `v0.0.x` | Development | Pre-release |
+| `v0.1.0` up to `v1.0.0` | Beta, starting at `v0.1.0` | Pre-release |
+| `v1.0.0` and later | Stable, starting at `v1.0.0` | Release |
+
+To publish a version, update it in each of these places, then commit and tag:
 
 - `Invoke-PingStamp.ps1`: `.VERSION` in the `PSScriptInfo` block
 - `pingstamp.sh`: the `Version:` header line and `VERSION=`

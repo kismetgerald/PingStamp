@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.0] - 2026-10-13
+## [0.0.1] - 2026-10-13
 
 ### Added
 
@@ -21,5 +21,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PowerShell: falls back to a plain pipeline under Constrained Language Mode.
 - Version display: `-Version` (PowerShell) and `--version` (bash).
 
-[Unreleased]: https://github.com/kismetgerald/PingStamp/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/kismetgerald/PingStamp/releases/tag/v1.0.0
+[Unreleased]: https://github.com/kismetgerald/PingStamp/compare/v0.0.1...HEAD
+[0.0.1]: https://github.com/kismetgerald/PingStamp/releases/tag/v0.0.1
