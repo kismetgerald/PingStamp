@@ -51,9 +51,11 @@ min_gap_ms() {
 # Run a script with job control on, so it gets its own process group with
 # SIGINT at its default (a plain "&" job would start with SIGINT ignored),
 # then send Ctrl+C to the whole group as a terminal would.
-ctrl_c_run() {   # ctrl_c_run SCRIPT OUTFILE
+ctrl_c_run() {   # ctrl_c_run SCRIPT OUTFILE [EXTRA_ARGUMENTS...]
+    local script=$1 out=$2
+    shift 2
     set -m
-    "$SHELL_UNDER_TEST" "$1" 127.0.0.1 > "$2" 2>&1 &
+    "$SHELL_UNDER_TEST" "$script" "$@" 127.0.0.1 > "$out" 2>&1 &
     local pid=$!
     set +m
     sleep 3
@@ -109,12 +111,34 @@ if [ "$OS" = linux ]; then
     check "options after the target (Linux)" test "$(stamped_count "$TMP/order")" -eq 2
 fi
 
+# --- --log --------------------------------------------------------------------
+
+log=$TMP/ping.log
+"$SHELL_UNDER_TEST" "$SCRIPT" --log "$log" -c 2 127.0.0.1 > "$TMP/logrun" 2>&1
+check "--log: exits 0" test $? -eq 0
+check "--log: the log matches the screen" cmp -s "$log" "$TMP/logrun"
+check "--log: the log has 2 stamped lines" test "$(stamped_count "$log")" -eq 2
+
+"$SHELL_UNDER_TEST" "$SCRIPT" -c 1 127.0.0.1 "--log=$log" > /dev/null 2>&1
+check "--log=FILE after the target appends (now 3 stamped lines)" \
+    test "$(stamped_count "$log")" -eq 3
+
+"$SHELL_UNDER_TEST" "$SCRIPT" -c 1 127.0.0.1 --log > /dev/null 2>&1
+check "--log without a file name exits 2" test $? -eq 2
+
+"$SHELL_UNDER_TEST" "$SCRIPT" --log "$TMP/no-such-dir/ping.log" -c 1 127.0.0.1 \
+    > "$TMP/badlog" 2>&1
+check "--log to an unwritable path exits 2" test $? -eq 2
+check "--log to an unwritable path does not ping" test "$(stamped_count "$TMP/badlog")" -eq 0
+
 # --- Ctrl+C -------------------------------------------------------------------
 
-ctrl_c_run "$SCRIPT" "$TMP/ctrlc"
+ctrl_c_run "$SCRIPT" "$TMP/ctrlc" --log "$TMP/ctrlc.log"
 check "Ctrl+C: exits 0" test $? -eq 0
 check "Ctrl+C: statistics are shown" grep -q 'ping statistics' "$TMP/ctrlc"
 check "Ctrl+C: replies before it are stamped" test "$(stamped_count "$TMP/ctrlc")" -ge 2
+check "Ctrl+C with --log: the log matches the screen, statistics included" \
+    cmp -s "$TMP/ctrlc.log" "$TMP/ctrlc"
 
 # Control: without the filter's "trap '' INT" the statistics must be lost.
 # If they are not, the test above proves nothing.

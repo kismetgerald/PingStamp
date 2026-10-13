@@ -38,10 +38,17 @@ https://github.com/kismetgerald/PingStamp/blob/main/CHANGELOG.md
     target; macOS ping needs them first. Run "ping /?" (Windows) or "ping -h"
     (Linux) to list them.
 
-    Every line goes to the pipeline, so the output can be piped or redirected
-    to a log file. The exception is Ctrl+C during a continuous ping:
-    PowerShell has already stopped the pipeline by then, so ping's closing
-    statistics are written to the console instead.
+    To keep a log, use -LogFile <path>. Every line, timestamped as on screen,
+    is appended to that file as it arrives, including ping's statistics after
+    Ctrl+C. -LogFile is the script's own option and may appear anywhere in the
+    arguments; "-LogFile:<path>" also works. The file is created if needed. If
+    it can't be written, the script stops with exit code 2 before pinging.
+
+    Every line also goes to the pipeline, so the output can be piped or
+    redirected. The exception is Ctrl+C during a continuous ping: PowerShell
+    has already stopped the pipeline by then, so ping's closing statistics
+    go to the console (and to -LogFile) instead. That is why -LogFile is the
+    better way to keep a log than Tee-Object or ">".
 
     Under Constrained Language Mode (AppLocker/WDAC), the script falls back
     to a plain pipeline. The output is the same, but Ctrl+C discards ping's
@@ -62,9 +69,10 @@ https://github.com/kismetgerald/PingStamp/blob/main/CHANGELOG.md
     Pings until Ctrl+C is pressed, then shows the statistics.
 
 .EXAMPLE
-    .\Invoke-PingStamp.ps1 -n 100 192.168.1.10 | Tee-Object -FilePath .\ping.log
+    .\Invoke-PingStamp.ps1 -t 192.168.1.10 -LogFile .\ping.log
 
-    Sends 100 echo requests, showing the output and saving it to ping.log.
+    Pings until Ctrl+C, showing the output and appending it to ping.log,
+    statistics included.
 
 .EXAMPLE
     .\Invoke-PingStamp.ps1 192.168.1.10 -n 3 -l 1472 -f
@@ -89,7 +97,11 @@ https://github.com/kismetgerald/PingStamp/blob/main/CHANGELOG.md
     (-Verbose, -WarningAction, ...), would capture native ping switches such
     as -t, -v, -w and -i.
 
-    Exit code is ping's own exit code; 2 when run with no arguments.
+    The script's own options are -LogFile and -Version. Exact names like
+    these can't clash with ping's single-letter switches.
+
+    Exit code is ping's own exit code; 2 for a usage error or a log file that
+    can't be written.
 
 .LINK
     https://github.com/kismetgerald/PingStamp
@@ -217,14 +229,16 @@ function ConvertTo-ArgumentString {
     $quoted -join ' '
 }
 
+function Write-LogLine {
+    # Appends a line to the -LogFile log, if there is one.
+    param([string] $Line)
+    if ($script:LogPath) {
+        Add-Content -LiteralPath $script:LogPath -Value $Line -Encoding UTF8 -ErrorAction Stop
+    }
+}
+
 # --- Arguments ---------------------------------------------------------------
 
-if ($args.Count -eq 0) {
-    $Host.UI.WriteErrorLine('Usage: Invoke-PingStamp.ps1 [ping options] <hostname | IPv4 address>')
-    $Host.UI.WriteErrorLine('All arguments are passed to ping. For details, run:')
-    $Host.UI.WriteErrorLine("  Get-Help '$PSCommandPath' -Full")
-    exit 2
-}
 if ($args.Count -eq 1 -and "$($args[0])" -eq '-Version') {
     $match = Select-String -Path $PSCommandPath -Pattern '^\.VERSION\s+(\S+)' |
         Select-Object -First 1
@@ -232,10 +246,48 @@ if ($args.Count -eq 1 -and "$($args[0])" -eq '-Version') {
     exit 0
 }
 
+# -LogFile is this script's own option: take it and its path out of the
+# arguments, which are otherwise all for ping. It may appear anywhere.
+# "-LogFile:path" arrives as "-LogFile:" followed by the path.
+$script:LogPath = $null
+$remaining = @()
+for ($i = 0; $i -lt $args.Count; $i++) {
+    if ("$($args[$i])" -in '-LogFile', '-LogFile:') {
+        if ($i + 1 -ge $args.Count) {
+            $Host.UI.WriteErrorLine('-LogFile needs a file path.')
+            exit 2
+        }
+        $i++
+        $script:LogPath = "$($args[$i])"
+    }
+    else {
+        $remaining += , $args[$i]
+    }
+}
+
+if ($remaining.Count -eq 0) {
+    $Host.UI.WriteErrorLine('Usage: Invoke-PingStamp.ps1 [-LogFile <path>] [ping options] <hostname | IPv4 address>')
+    $Host.UI.WriteErrorLine('All other arguments are passed to ping. For details, run:')
+    $Host.UI.WriteErrorLine("  Get-Help '$PSCommandPath' -Full")
+    exit 2
+}
+
+if ($script:LogPath) {
+    # Fail now, before pinging, if the log can't be written. Appending
+    # nothing creates the file if needed and leaves an existing one as it is.
+    try {
+        Add-Content -LiteralPath $script:LogPath -Value @() -Encoding UTF8 -ErrorAction Stop
+    }
+    catch {
+        $Host.UI.WriteErrorLine("Cannot write to log file '$($script:LogPath)': $($_.Exception.Message)")
+        exit 2
+    }
+}
+
 # PowerShell has already parsed the arguments: "-n" arrives as a string, but
 # "10" as an int, "0.2" as a double and "a,b" as an array. Turn them back into
 # text without the current culture's decimal separator.
-$pingArguments = foreach ($arg in $args) {
+$pingArguments = foreach ($arg in $remaining) {
     $parts = foreach ($item in @($arg)) {
         [Convert]::ToString($item, [cultureinfo]::InvariantCulture)
     }
@@ -257,7 +309,11 @@ if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') {
     # Constrained Language Mode (AppLocker/WDAC) blocks the Process class used
     # below. A plain pipeline gives the same output, except that Ctrl+C
     # discards ping's closing statistics.
-    & $pingPath @pingArguments | ForEach-Object { Format-PingLine -Line $_ }
+    & $pingPath @pingArguments | ForEach-Object {
+        $formatted = Format-PingLine -Line $_
+        Write-LogLine -Line $formatted
+        $formatted
+    }
     exit $LASTEXITCODE
 }
 
@@ -274,12 +330,16 @@ $startInfo.StandardOutputEncoding = [Console]::OutputEncoding
 
 $process = [System.Diagnostics.Process]::Start($startInfo)
 $pending = $null    # line read from ping but not yet written
+$formatted = $null  # $pending, once formatted
+$logged = $false    # $formatted has gone to the log
 $sectionBefore = $script:Section
 $completed = $false
 $exitCode = 1       # replaced by ping's exit code; stays 1 if this script fails
 try {
     while ($true) {
         $sectionBefore = $script:Section
+        $formatted = $null
+        $logged = $false
         $pending = $process.StandardOutput.ReadLine()
         if ($null -eq $pending) { break }
         $formatted = Format-PingLine -Line $pending
@@ -290,6 +350,8 @@ try {
             # below, where the line may or may not have reached the screen.
             Start-Sleep -Milliseconds 100
         }
+        Write-LogLine -Line $formatted
+        $logged = $true
         $formatted
         $pending = $null
     }
@@ -316,15 +378,22 @@ finally {
 
         if ($ctrlC) {
             # Ping has printed its statistics. The pipeline is stopped, so
-            # pass the remaining lines to the host. Write-Output would
-            # silently end this block.
+            # pass the remaining lines to the host and the log. Write-Output
+            # would silently end this block.
             if ($null -ne $pending) {
-                # Stopped part-way through this line: format it again.
-                $script:Section = $sectionBefore
-                $Host.UI.WriteLine((Format-PingLine -Line $pending))
+                # Stopped part-way through this line. If it wasn't formatted
+                # yet, format it from the start.
+                if ($null -eq $formatted) {
+                    $script:Section = $sectionBefore
+                    $formatted = Format-PingLine -Line $pending
+                }
+                $Host.UI.WriteLine($formatted)
+                if (-not $logged) { Write-LogLine -Line $formatted }
             }
             while ($null -ne ($line = $process.StandardOutput.ReadLine())) {
-                $Host.UI.WriteLine((Format-PingLine -Line $line))
+                $formatted = Format-PingLine -Line $line
+                $Host.UI.WriteLine($formatted)
+                Write-LogLine -Line $formatted
             }
         }
     }

@@ -10,11 +10,12 @@
 # Self-contained: needs only bash 3.2+ and ping. Works with Linux (iputils),
 # macOS/BSD ping, and Windows ping.exe under Git Bash, MSYS2 or Cygwin.
 #
-# Usage:    pingstamp.sh [PING_OPTIONS] TARGET
+# Usage:    pingstamp.sh [--log FILE] [PING_OPTIONS] TARGET
 #           pingstamp.sh --help | --version
 #
-# Every argument is passed to ping unchanged, so all of this system's ping
-# options work as usual. Exit status is ping's own exit status.
+# Apart from --log, every argument is passed to ping unchanged, so all of
+# this system's ping options work as usual. Exit status is ping's own exit
+# status, or 2 for a usage error or a log file that can't be written.
 
 set -u
 
@@ -23,23 +24,27 @@ readonly PROG=${0##*/}
 
 usage() {
     cat <<EOF
-Usage: $PROG [PING_OPTIONS] TARGET
+Usage: $PROG [--log FILE] [PING_OPTIONS] TARGET
        $PROG --help | --version
 
 Run this system's ping command and prefix each reply line with a timestamp in
 the format "YYYY-MM-DD HH:MM:SS:MS TZ". Header and summary lines are printed
 unchanged.
 
-TARGET is a hostname or IPv4 address. All arguments are passed to ping as-is,
-so every native ping option works; see 'ping -h' (Linux), 'man ping' (macOS)
-or 'ping /?' (Windows).
+TARGET is a hostname or IPv4 address. Apart from --log, all arguments are
+passed to ping as-is, so every native ping option works; see 'ping -h'
+(Linux), 'man ping' (macOS) or 'ping /?' (Windows).
 
-  --help      Show this help and exit.
-  --version   Show the version and exit.
+  --log FILE  Also append every line, as shown, to FILE (created if needed).
+              Unlike '| tee', this keeps ping's statistics after Ctrl+C.
+              May appear anywhere; --log=FILE also works.
+  --help      Show this help and exit (first argument only).
+  --version   Show the version and exit (first argument only).
 
 Examples:
   $PROG google.com                         Ping until Ctrl+C (Linux, macOS)
   $PROG -c 10 192.168.1.10                 Send 10 echo requests
+  $PROG --log ping.log 192.168.1.10        Ping until Ctrl+C, keeping a log
   $PROG -c 5 -i 0.2 -s 1400 192.168.1.10   Any other native options
   $PROG -n 10 192.168.1.10                 Windows ping under Git Bash
 EOF
@@ -86,6 +91,14 @@ fi
 # line instead of matching text keeps this working with localized ping output.
 # ---------------------------------------------------------------------------
 
+# Print a line, and append it to the --log file (fd 3) if there is one.
+emit() {
+    printf '%s\n' "$1"
+    if [[ -n $LOG_FILE ]]; then
+        printf '%s\n' "$1" >&3
+    fi
+}
+
 stamp_lines() {
     # Ctrl+C goes to ping and to us. Ping answers it by printing its
     # statistics; ignoring it here keeps us alive to pass them through.
@@ -98,21 +111,21 @@ stamp_lines() {
         case $state in
             header)
                 [[ -n ${line//[[:space:]]/} ]] && state=probes
-                printf '%s\n' "$line"
+                emit "$line"
                 ;;
             probes)
                 if [[ -z ${line//[[:space:]]/} ]]; then
                     state=summary
-                    printf '%s\n' "$line"
+                    emit "$line"
                 elif [[ $line == [[:space:]]* || $line == 'PING '* ]]; then
-                    printf '%s\n' "$line"
+                    emit "$line"
                 else
                     stamp
-                    printf '%s %s\n' "$STAMP" "$line"
+                    emit "$STAMP $line"
                 fi
                 ;;
             summary)
-                printf '%s\n' "$line"
+                emit "$line"
                 # Windows ping -t prints interim statistics on Ctrl+Break,
                 # then carries on pinging.
                 [[ $line == Control-Break* ]] && state=probes
@@ -125,19 +138,57 @@ stamp_lines() {
 # Main
 # ---------------------------------------------------------------------------
 
-if (( $# == 0 )); then
-    usage >&2
-    exit 2
-fi
-case $1 in
+case ${1:-} in
     --help)    usage; exit 0 ;;
     --version) printf '%s %s\n' "$PROG" "$VERSION"; exit 0 ;;
 esac
+
+# --log is this script's own option: take it and its file name out of the
+# arguments, which are otherwise all for ping. It may appear anywhere.
+LOG_FILE=""
+log_given=false
+ping_args=()
+while (( $# > 0 )); do
+    case $1 in
+        --log)
+            log_given=true
+            LOG_FILE=${2:-}
+            shift $(( $# > 1 ? 2 : 1 ))
+            ;;
+        --log=*)
+            log_given=true
+            LOG_FILE=${1#--log=}
+            shift
+            ;;
+        *)
+            ping_args+=("$1")
+            shift
+            ;;
+    esac
+done
+
+if [[ $log_given == true && -z $LOG_FILE ]]; then
+    printf '%s: --log needs a file name\n' "$PROG" >&2
+    exit 2
+fi
+if (( ${#ping_args[@]} == 0 )); then
+    usage >&2
+    exit 2
+fi
+
+if [[ -n $LOG_FILE ]]; then
+    # Open the log once for appending; fail now, before pinging, if that
+    # can't be done.
+    if ! { exec 3>>"$LOG_FILE"; } 2>/dev/null; then
+        printf "%s: cannot write to log file '%s'\n" "$PROG" "$LOG_FILE" >&2
+        exit 2
+    fi
+fi
 
 if ! command -v ping >/dev/null 2>&1; then
     printf '%s: ping command not found\n' "$PROG" >&2
     exit 127
 fi
 
-command ping "$@" | stamp_lines
+command ping "${ping_args[@]}" 3>&- | stamp_lines
 exit "${PIPESTATUS[0]}"

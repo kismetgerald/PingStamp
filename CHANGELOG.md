@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Log file option: `--log FILE` (bash) and `-LogFile <path>` (PowerShell).
+  Every line is appended to the log as shown, including ping's statistics
+  after Ctrl+C, which `tee` and `Tee-Object` lose. The option may appear
+  anywhere in the arguments. An unwritable log stops the script with exit
+  code 2 before pinging.
+
 ### Fixed
 
 - PowerShell 7 on Linux and macOS: the script failed at the first reply. A

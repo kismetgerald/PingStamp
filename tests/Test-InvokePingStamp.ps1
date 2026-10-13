@@ -186,26 +186,57 @@ Test-That "Select-Object -First 4: stops promptly ($([int]$watch.Elapsed.TotalSe
 Test-That 'Select-Object -First 4: ping is not left running' (
     @(Get-Process -Name ping -ErrorAction SilentlyContinue).Count -le $pingsBefore)
 
+# --- -LogFile -----------------------------------------------------------------
+
+$log = Join-Path -Path $tempDir -ChildPath "pingstamp-logfile-$PID.log"
+Remove-Item -Path $log -ErrorAction SilentlyContinue
+$r = Invoke-Child -ArgumentList '-File', $script, '-LogFile', $log, $count, '2', '127.0.0.1'
+$logLines = @(Get-Content -Path $log -ErrorAction SilentlyContinue)
+Test-That '-LogFile: exits 0' ($r.ExitCode -eq 0)
+Test-That '-LogFile: the log matches the output' (($logLines -join "`n") -eq ($r.Lines -join "`n"))
+$script:lastOutput = $logLines
+Test-That '-LogFile: the log has 2 stamped lines and the statistics' (
+    (Get-StampedLine -Lines $logLines).Count -eq 2 -and @($logLines -match 'statistics').Count -eq 1)
+
+$r = Invoke-Child -ArgumentList '-Command', "& '$script' $count 1 127.0.0.1 -LogFile:'$log'; exit `$LASTEXITCODE"
+$script:lastOutput = @(Get-Content -Path $log -ErrorAction SilentlyContinue)
+Test-That '-LogFile:<path> after the target appends (now 3 stamped lines)' (
+    (Get-StampedLine -Lines $script:lastOutput).Count -eq 3)
+Remove-Item -Path $log -ErrorAction SilentlyContinue
+
+$r = Invoke-Child -ArgumentList '-File', $script, $count, '1', '127.0.0.1', '-LogFile'
+Test-That '-LogFile without a path exits 2' ($r.ExitCode -eq 2)
+
+$badLog = Join-Path -Path $tempDir -ChildPath "no-such-dir-$PID/ping.log"
+$r = Invoke-Child -ArgumentList '-File', $script, '-LogFile', $badLog, $count, '1', '127.0.0.1'
+Test-That '-LogFile to an unwritable path exits 2 without pinging' (
+    $r.ExitCode -eq 2 -and (Get-StampedLine -Lines $r.Lines).Count -eq 0)
+
 # --- Constrained Language Mode ------------------------------------------------
 
+$log = Join-Path -Path $tempDir -ChildPath "pingstamp-clm-$PID.log"
+Remove-Item -Path $log -ErrorAction SilentlyContinue
 $r = Invoke-Child -ArgumentList '-Command', (
     "`$ExecutionContext.SessionState.LanguageMode = 'ConstrainedLanguage'; " +
-    "& '$script' $count 2 127.0.0.1; exit `$LASTEXITCODE")
+    "& '$script' $count 2 127.0.0.1 -LogFile '$log'; exit `$LASTEXITCODE")
 Test-That 'Constrained Language Mode: exits 0' ($r.ExitCode -eq 0)
 Test-That 'Constrained Language Mode: 2 stamped lines' ((Get-StampedLine -Lines $r.Lines).Count -eq 2)
+$script:lastOutput = @(Get-Content -Path $log -ErrorAction SilentlyContinue)
+Test-That 'Constrained Language Mode: -LogFile works' ((Get-StampedLine -Lines $script:lastOutput).Count -eq 2)
+Remove-Item -Path $log -ErrorAction SilentlyContinue
 
-# --- Ctrl+C -------------------------------------------------------------------
+# --- Ctrl+C (with -LogFile) ---------------------------------------------------
 
+$ctrlLog = Join-Path -Path $tempDir -ChildPath "pingstamp-ctrlc-$PID.log"
+Remove-Item -Path $ctrlLog -ErrorAction SilentlyContinue
+$lines = $null
 if ($onWindows) {
     $python = Get-Command -Name python, py -CommandType Application -ErrorAction SilentlyContinue |
         Select-Object -First 1
     if ($python) {
         $harness = Join-Path -Path $PSScriptRoot -ChildPath 'ctrlc_harness.py'
-        $lines = & $python.Source -I $harness 3.5 $shell -NoProfile -ExecutionPolicy Bypass `
-            -File $script -t 127.0.0.1
-        Test-CtrlCOutput -Lines $lines -Label 'Ctrl+C'
-        Test-That 'Ctrl+C: ends with Control-C' (
-            ($lines | Where-Object { $_.Trim() } | Select-Object -Last 1) -eq 'Control-C')
+        $lines = @(& $python.Source -I $harness 3.5 $shell -NoProfile -ExecutionPolicy Bypass `
+            -File $script -t 127.0.0.1 -LogFile $ctrlLog)
     }
     else {
         Write-Host 'skip Ctrl+C: Python not found (needed for tests/ctrlc_harness.py)'
@@ -215,11 +246,24 @@ else {
     # Job control gives the child its own process group with SIGINT at its
     # default, so the signal reaches pwsh and ping as a terminal's Ctrl+C would.
     $out = Join-Path -Path $tempDir -ChildPath "pingstamp-ctrlc-$PID.txt"
-    bash -c 'set -m; "$0" -NoProfile -File "$1" 127.0.0.1 > "$2" 2>&1 & pid=$!; set +m; sleep 4; kill -INT -- -$pid; wait $pid' `
-        $shell $script $out
+    bash -c 'set -m; "$0" -NoProfile -File "$1" 127.0.0.1 -LogFile "$3" > "$2" 2>&1 & pid=$!; set +m; sleep 4; kill -INT -- -$pid; wait $pid' `
+        $shell $script $out $ctrlLog
     $lines = @(Get-Content -Path $out)
     Remove-Item -Path $out -ErrorAction SilentlyContinue
+}
+
+if ($null -ne $lines) {
+    $logLines = @(Get-Content -Path $ctrlLog -ErrorAction SilentlyContinue)
+    Remove-Item -Path $ctrlLog -ErrorAction SilentlyContinue
     Test-CtrlCOutput -Lines $lines -Label 'Ctrl+C'
+    Test-CtrlCOutput -Lines $logLines -Label 'Ctrl+C, -LogFile'
+    if ($onWindows) {
+        foreach ($pair in @(@('Ctrl+C', $lines), @('Ctrl+C, -LogFile', $logLines))) {
+            $script:lastOutput = $pair[1]
+            Test-That "$($pair[0]): ends with Control-C" (
+                ($pair[1] | Where-Object { $_.Trim() } | Select-Object -Last 1) -eq 'Control-C')
+        }
+    }
 }
 
 # ------------------------------------------------------------------------------

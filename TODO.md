@@ -14,10 +14,12 @@ user-visible changes in [CHANGELOG.md](CHANGELOG.md).
   *Done. It found and fixed two bugs: PowerShell 7 on Linux/macOS failed at
   the first reply, and `ping -v` got its header stamped. macOS ping does not
   buffer, and Ctrl+C keeps the statistics on every platform.*
-- [ ] **2. Built-in log file:** `--log FILE` (bash) and `-LogFile FILE`
+- [x] **2. Built-in log file:** `--log FILE` (bash) and `-LogFile FILE`
   (PowerShell). Today Ctrl+C loses the statistics from logs: in bash, `tee`
   is killed too (`tee -i` survives); in PowerShell, they go to the console
-  instead of `Tee-Object` or a redirect.
+  instead of `Tee-Object` or a redirect. *Done: appends, may appear
+  anywhere, fails before pinging if the log can't be written. Tested,
+  including Ctrl+C on every platform and Constrained Language Mode.*
 - [ ] **3. Show dropped replies on Linux.** iputils ping prints nothing for a
   lost reply, so timestamps can't show when a drop happened. Add `-O` (it
   prints `no answer yet for icmp_seq=N`) on iputils unless the user already

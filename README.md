@@ -74,8 +74,9 @@ chmod +x pingstamp.sh
 ## Usage
 
 Both scripts take exactly the same arguments as the native `ping` on that
-system. The target is a hostname or IPv4 address. Windows and Linux `ping`
-accept options before or after the target; macOS `ping` needs them first.
+system, plus an option to keep a log. The target is a hostname or IPv4
+address. Windows and Linux `ping` accept options before or after the target;
+macOS `ping` needs them first.
 
 ### PowerShell
 
@@ -84,7 +85,7 @@ accept options before or after the target; macOS `ping` needs them first.
 .\Invoke-PingStamp.ps1 -t server01.example.com            # until Ctrl+C
 .\Invoke-PingStamp.ps1 -n 100 192.168.1.10                # 100 echo requests
 .\Invoke-PingStamp.ps1 192.168.1.10 -n 3 -l 1472 -f       # MTU test with Don't Fragment
-.\Invoke-PingStamp.ps1 -n 100 192.168.1.10 | Tee-Object -FilePath .\ping.log
+.\Invoke-PingStamp.ps1 -t 192.168.1.10 -LogFile .\ping.log  # until Ctrl+C, keeping a log
 ```
 
 On Linux or macOS with PowerShell 7, use that system's switches:
@@ -97,6 +98,7 @@ Script options:
 
 | Option | Description |
 | --- | --- |
+| `-LogFile <path>` | Also append every line, as shown, to a log file. Anywhere in the arguments; `-LogFile:<path>` also works |
 | `-?` | Show help (or `Get-Help .\Invoke-PingStamp.ps1 -Full`) |
 | `-Version` | Show the script version (use it on its own) |
 
@@ -106,15 +108,30 @@ Script options:
 ./pingstamp.sh google.com                        # until Ctrl+C (Linux, macOS)
 ./pingstamp.sh -c 10 192.168.1.10                # 10 echo requests
 ./pingstamp.sh -c 5 -i 0.2 -s 1400 192.168.1.10  # any native options
-./pingstamp.sh 192.168.1.10 -c 100 | tee ping.log
+./pingstamp.sh --log ping.log 192.168.1.10       # until Ctrl+C, keeping a log
 ```
 
-Script options (use them on their own):
+Script options:
 
 | Option | Description |
 | --- | --- |
-| `--help` | Show help |
-| `--version` | Show the script version |
+| `--log FILE` | Also append every line, as shown, to a log file. Anywhere in the arguments; `--log=FILE` also works |
+| `--help` | Show help (first argument only) |
+| `--version` | Show the script version (first argument only) |
+
+### Keeping a log
+
+Use `--log` / `-LogFile` rather than `tee`, `Tee-Object` or `>`. The log gets
+every line exactly as shown, as it happens, and it still gets ping's
+statistics after Ctrl+C:
+
+- In Bash, Ctrl+C also stops `tee`, so the statistics never reach the log.
+  (`tee -i` avoids that.)
+- In PowerShell, the statistics after Ctrl+C go to the console, not into
+  `Tee-Object` or a redirect.
+
+The log is appended to, not overwritten, and created if it doesn't exist. If
+it can't be written, the script exits with code 2 before pinging.
 
 Native `ping` help is still available: `ping -h` (Linux), `man ping` (macOS),
 `ping /?` (Windows).
@@ -134,8 +151,9 @@ Native `ping` help is still available: `ping -h` (Linux), `man ping` (macOS),
   abbreviates them (EDT), with a built-in table for zones whose initials would
   be wrong (for example CET/CEST, GMT/BST, AEST/AEDT, JST).
 - **Ctrl+C.** Stopping a continuous ping still shows ping's statistics in both
-  scripts. In PowerShell, these final lines go to the console rather than the
-  pipeline, because PowerShell has already stopped the pipeline by then.
+  scripts, and they go into the `--log` / `-LogFile` log. In PowerShell, these
+  final lines go to the console rather than the pipeline, because PowerShell
+  has already stopped the pipeline by then.
 - **Exit code.** Each script exits with `ping`'s own exit code, so it works in
   scripts and monitoring checks just like `ping`. Running a script with no
   arguments exits with code 2.
