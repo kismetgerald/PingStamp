@@ -1,0 +1,16 @@
+# OS and editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Dropbox metadata
+.dropbox
+.dropbox.attr
+
+# Claude Code session files
+.claude/
+
+# Ping logs from local testing
+*.log
