@@ -53,8 +53,9 @@ https://github.com/kismetgerald/PingStamp (MIT).
 
 CI (`.github/workflows/ci.yml`) runs the tests on every push to `main`.
 PowerShell runs on Windows 5.1 and on PowerShell 7 under Windows, Ubuntu and
-macOS. Bash runs on Ubuntu, macOS, and macOS `/bin/bash` 3.2. CI also runs
-ShellCheck and PSScriptAnalyzer. Every change to a script gets a test.
+macOS. Bash runs as bash 5 on Ubuntu and as `/bin/bash` 3.2 on macOS (the
+only bash on macOS runners). CI also runs ShellCheck and PSScriptAnalyzer.
+Every change to a script gets a test.
 
 Run the tests locally before pushing:
 

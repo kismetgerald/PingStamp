@@ -38,9 +38,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # macOS runners only have the system bash 3.2; Ubuntu covers bash 5.
         include:
           - { label: Ubuntu, os: ubuntu-latest, bash: bash }
-          - { label: macOS, os: macos-latest, bash: bash }
           - { label: macOS bash 3.2, os: macos-latest, bash: /bin/bash }
     runs-on: ${{ matrix.os }}
     steps:

@@ -162,7 +162,7 @@ Every push runs the tests in [`tests/`](tests) on GitHub Actions:
 | Script | Tested with |
 | --- | --- |
 | `Invoke-PingStamp.ps1` | Windows PowerShell 5.1; PowerShell 7 on Windows, Ubuntu and macOS |
-| `pingstamp.sh` | bash on Ubuntu and macOS, plus macOS's built-in bash 3.2 |
+| `pingstamp.sh` | bash 5 on Ubuntu; macOS's built-in bash 3.2 |
 
 The tests ping `127.0.0.1` only. They check the timestamps, that native
 switches pass through, exit codes, and Ctrl+C. For PowerShell they also check

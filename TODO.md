@@ -5,12 +5,15 @@ user-visible changes in [CHANGELOG.md](CHANGELOG.md).
 
 ## v0.0.2: fix what real use would hit, and close the testing gaps
 
-- [ ] **1. Automated tests and CI.** Add test scripts for both scripts
+- [x] **1. Automated tests and CI.** Add test scripts for both scripts
   (`tests/`) and a GitHub Actions workflow. It runs them on Windows
   (PowerShell 5.1 and 7), Ubuntu and macOS, plus ShellCheck and
   PSScriptAnalyzer. This covers the untested platforms (PowerShell 7 on
   Linux/macOS, macOS bash 3.2) and checks whether macOS ping buffers its
   output when piped. Done first, so every later item gets tests as it lands.
+  *Done. It found and fixed two bugs: PowerShell 7 on Linux/macOS failed at
+  the first reply, and `ping -v` got its header stamped. macOS ping does not
+  buffer, and Ctrl+C keeps the statistics on every platform.*
 - [ ] **2. Built-in log file:** `--log FILE` (bash) and `-LogFile FILE`
   (PowerShell). Today Ctrl+C loses the statistics from logs: in bash, `tee`
   is killed too (`tee -i` survives); in PowerShell, they go to the console
