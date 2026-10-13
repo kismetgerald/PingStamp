@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--hide-drops` (bash) or `-HideDrops` (PowerShell). Windows and macOS
   `ping` already report lost replies.
 
+### Changed
+
+- The README now covers using the scripts only. How they work, testing and
+  publishing moved to the new CONTRIBUTING.md.
+
 ### Fixed
 
 - PowerShell 7 on Linux and macOS: the script failed at the first reply. A
