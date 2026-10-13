@@ -59,14 +59,15 @@ https://github.com/kismetgerald/PingStamp (MIT).
 
 CI (`.github/workflows/ci.yml`) runs the tests on every push to `main`.
 PowerShell runs on Windows 5.1 and on PowerShell 7 under Windows, Ubuntu and
-macOS. Bash runs as bash 5 on Ubuntu and as `/bin/bash` 3.2 on macOS (the
-only bash on macOS runners). CI also runs ShellCheck and PSScriptAnalyzer.
-Every change to a script gets a test.
+macOS. Bash runs as bash 5 on Ubuntu, as `/bin/bash` 3.2 on macOS (the
+only bash on macOS runners), and as Git Bash on Windows with Windows `ping`.
+CI also runs ShellCheck and PSScriptAnalyzer. Every change to a script gets
+a test.
 
 Run the tests locally before pushing:
 
-- `bash tests/test-pingstamp.sh` in WSL (`wsl -d Debian`). Set
-  `BASH_UNDER_TEST=/path/to/bash` to test another bash.
+- `bash tests/test-pingstamp.sh` in WSL (`wsl -d Debian`) and in Git Bash.
+  Set `BASH_UNDER_TEST=/path/to/bash` to test another bash.
 - `pwsh -File tests/Test-InvokePingStamp.ps1`, and again with
   `powershell -ExecutionPolicy Bypass -File tests\Test-InvokePingStamp.ps1`.
 
@@ -77,10 +78,12 @@ Things the tests rely on, which are easy to break:
   (job control) and `kill -INT -- -PID` on the process group. A control run
   with the filter's `trap '' INT` removed must lose the statistics, or the
   test proves nothing.
-- **Ctrl+C on Windows** needs a real console event, so
-  `tests/ctrlc_harness.py` (Python) starts the script in a hidden console and
-  raises `CTRL_C_EVENT` there. The expected output is the replies, exactly one
-  blank line, then the full statistics ending in `Control-C`.
+- **Ctrl+C on Windows** (PowerShell and Git Bash) needs a real console
+  event, so `tests/ctrlc_harness.py` (Python) starts the script in a hidden
+  console and raises `CTRL_C_EVENT` there. The expected output is the
+  replies, exactly one blank line, then the full statistics ending in
+  `Control-C`. Git Bash's mintty window can't be driven this way; recheck it
+  by hand after changing the Ctrl+C handling.
 - **The PowerShell tests count an unexpected error as a failure** (a script
   `trap`). Without it, a broken test is skipped silently.
 

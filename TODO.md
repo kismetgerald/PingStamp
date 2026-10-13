@@ -26,9 +26,12 @@ user-visible changes in [CHANGELOG.md](CHANGELOG.md).
   passed it. *Done: added automatically on iputils ≥ s20121221 (detected
   with `ping -V`); `--hide-drops` / `-HideDrops` turns it off. A duplicate
   `-O` is harmless, so the user's own `-O` needs no special handling.*
-- [ ] **4. Ctrl+C under Git Bash.** Its terminal (mintty) usually kills
+- [x] **4. Ctrl+C under Git Bash.** Its terminal (mintty) usually kills
   native Windows programs outright, which probably loses the statistics.
-  Test it, then fix or document.
+  Test it, then fix or document. *Done: no fix needed. With Git for Windows
+  2.55, Ctrl+C keeps the statistics, screen and log, in mintty (checked by
+  hand) and in a Windows console (now tested in CI on every push). The exit
+  code afterwards is 130; documented.*
 - [ ] **5. Release v0.0.2** (pre-release).
 
 ## v0.0.3: optional features

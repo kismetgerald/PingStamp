@@ -192,8 +192,13 @@ Native `ping` help is still available: `ping -h` (Linux), `man ping` (macOS),
 - **PowerShell argument parsing.** PowerShell parses arguments before the
   script sees them. Quote values that must keep their exact text, such as a
   `ping -p` padding pattern with leading zeros: `-p '0101'`.
-- **Git Bash.** Use dash-style switches (`-n 4`), not slash-style (`/n 4`).
-  MSYS treats arguments that start with `/` as paths and rewrites them.
+- **Git Bash.** `pingstamp.sh` runs Windows `ping` there, so use Windows
+  switches (`-n`, `-t`, `-l`) in dash style (`-n 4`), not slash style
+  (`/n 4`): Git Bash treats arguments that start with `/` as paths and
+  rewrites them. Ctrl+C keeps ping's statistics both in Git Bash's own window
+  (mintty) and in a Windows console such as Windows Terminal (checked with
+  Git for Windows 2.55). Afterwards the exit code is 130, the usual code for
+  a command stopped by Ctrl+C, rather than ping's own.
 
 ## Testing
 
@@ -202,14 +207,15 @@ Every push runs the tests in [`tests/`](tests) on GitHub Actions:
 | Script | Tested with |
 | --- | --- |
 | `Invoke-PingStamp.ps1` | Windows PowerShell 5.1; PowerShell 7 on Windows, Ubuntu and macOS |
-| `pingstamp.sh` | bash 5 on Ubuntu; macOS's built-in bash 3.2 |
+| `pingstamp.sh` | bash 5 on Ubuntu; macOS's built-in bash 3.2; Git Bash on Windows |
 
 The tests ping `127.0.0.1` only. They check the timestamps, that native
 switches pass through, exit codes, and Ctrl+C. For PowerShell they also check
 redirection, `Select-Object -First`, and Constrained Language Mode. Windows
 Ctrl+C is tested with [`tests/ctrlc_harness.py`](tests/ctrlc_harness.py)
-(Python), which sends a real console Ctrl+C. Git Bash is not covered by the
-automated tests yet.
+(Python), which sends a real console Ctrl+C. Git Bash's own window (mintty)
+can't be driven from a test; Ctrl+C there was checked by hand with Git for
+Windows 2.55.
 
 To run the tests locally:
 

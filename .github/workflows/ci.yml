@@ -42,10 +42,13 @@ jobs:
         include:
           - { label: Ubuntu, os: ubuntu-latest, bash: bash }
           - { label: macOS bash 3.2, os: macos-latest, bash: /bin/bash }
+          - { label: Git Bash on Windows, os: windows-latest, bash: bash }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - name: Test pingstamp.sh
+        # On Windows runners, "shell: bash" is Git Bash.
+        shell: bash
         run: bash tests/test-pingstamp.sh
         env:
           BASH_UNDER_TEST: ${{ matrix.bash }}
