@@ -56,8 +56,12 @@ and 7, and on bash:
   redirect to a file; `| Select-Object -First 3` on a `-t` ping.
 - Constrained Language Mode:
   `powershell -Command "$ExecutionContext.SessionState.LanguageMode = 'ConstrainedLanguage'; & .\Invoke-PingStamp.ps1 -n 2 127.0.0.1"`
-- Bash on Linux through WSL (`wsl -d Debian`). Simulate Ctrl+C with
-  `setsid bash pingstamp.sh 127.0.0.1 & sleep 3; kill -INT -- -$!`.
+- Bash on Linux through WSL (`wsl -d Debian`). To simulate Ctrl+C, the
+  script must run in the **foreground**. Background jobs (`&`) start with
+  SIGINT ignored, which hides Ctrl+C bugs.
+  `( sleep 3; kill -INT -- -"$(cat /tmp/pg)" ) & setsid bash -c 'echo $$ > /tmp/pg; exec bash pingstamp.sh 127.0.0.1'`
+  As a control, the same test with the filter's `trap '' INT` removed must
+  lose the statistics.
 - Ctrl+C on Windows needs a real console event, so piping output won't do.
   Use `python -I tests/ctrlc_harness.py 3.5 "pwsh -NoProfile -File
   Invoke-PingStamp.ps1 -t 127.0.0.1"` (and again with `powershell`). Expect
