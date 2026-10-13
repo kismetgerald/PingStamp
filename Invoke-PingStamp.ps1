@@ -32,9 +32,10 @@ https://github.com/kismetgerald/PingStamp/blob/main/CHANGELOG.md
     Header and summary lines are written unchanged.
 
     The target is a hostname or IPv4 address. All arguments are passed to
-    ping as-is, in any order, so every native ping option works: -t, -n, -l,
-    -f, -a and the rest on Windows, and -c, -i, -s and the rest under
-    PowerShell 7 on Linux or macOS. Run "ping /?" (Windows) or "ping -h"
+    ping as-is, so every native ping option works: -t, -n, -l, -f, -a and the
+    rest on Windows, and -c, -i, -s and the rest under PowerShell 7 on Linux
+    or macOS. Windows and Linux ping accept options before or after the
+    target; macOS ping needs them first. Run "ping /?" (Windows) or "ping -h"
     (Linux) to list them.
 
     Every line goes to the pipeline, so the output can be piped or redirected
@@ -175,10 +176,11 @@ function Get-Timestamp {
 function Format-PingLine {
     # Native ping output has three parts: a header line, one line per probe,
     # and a summary that starts after a blank line. Only probe lines get a
-    # timestamp; indented lines inside the probe section continue the line
-    # above (e.g. the route from -r/-R) and are left alone. Splitting on the
-    # blank line instead of matching text keeps this working with localized
-    # ping output.
+    # timestamp. Left alone inside the probe section: indented lines, which
+    # continue the line above (e.g. the route from -r/-R), and a "PING ..."
+    # line, which is the real header when Linux ping -v prints a line before
+    # it. Splitting on the blank line instead of matching text keeps this
+    # working with localized ping output.
     param([string] $Line)
 
     $blank = [string]::IsNullOrWhiteSpace($Line)
@@ -189,7 +191,7 @@ function Format-PingLine {
         }
         'Probes' {
             if ($blank) { $script:Section = 'Summary'; $Line }
-            elseif ($Line -match '^\s') { $Line }
+            elseif ($Line -match '^\s' -or $Line -clike 'PING *') { $Line }
             else { '{0} {1}' -f (Get-Timestamp), $Line }
         }
         'Summary' {

@@ -79,10 +79,11 @@ fi
 # Output filter
 #
 # Native ping output has three parts: a header line, one line per probe, and
-# a summary that starts after a blank line. Only probe lines get a timestamp;
-# indented lines inside the probe section continue the line above (e.g. the
-# route from -R/-r) and are left alone. Splitting on the blank line instead
-# of matching text keeps this working with localized ping output.
+# a summary that starts after a blank line. Only probe lines get a timestamp.
+# Left alone inside the probe section: indented lines, which continue the line
+# above (e.g. the route from -R/-r), and a "PING ..." line, which is the real
+# header when Linux ping -v prints a line before it. Splitting on the blank
+# line instead of matching text keeps this working with localized ping output.
 # ---------------------------------------------------------------------------
 
 stamp_lines() {
@@ -103,7 +104,7 @@ stamp_lines() {
                 if [[ -z ${line//[[:space:]]/} ]]; then
                     state=summary
                     printf '%s\n' "$line"
-                elif [[ $line == [[:space:]]* ]]; then
+                elif [[ $line == [[:space:]]* || $line == 'PING '* ]]; then
                     printf '%s\n' "$line"
                 else
                     stamp

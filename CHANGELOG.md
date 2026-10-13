@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- With Linux `ping -v`, the `PING ...` header line no longer gets a
+  timestamp. `-v` prints an extra line first, which was taken for the
+  header.
+- Docs: options may follow the target only where the native `ping` allows
+  it (Windows, Linux), not on macOS.
+
 ## [0.0.1] - 2026-10-13
 
 ### Added
