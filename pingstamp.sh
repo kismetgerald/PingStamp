@@ -3,7 +3,7 @@
 # pingstamp.sh - Run the system ping command and prefix each reply line with a
 #                "YYYY-MM-DD HH:MM:SS:MS TZ" timestamp.
 #
-# Version:  0.0.1
+# Version:  0.0.2
 # Project:  https://github.com/kismetgerald/PingStamp
 # License:  MIT (see LICENSE.txt)
 #
@@ -20,7 +20,7 @@
 
 set -u
 
-readonly VERSION="0.0.1"
+readonly VERSION="0.0.2"
 readonly PROG=${0##*/}
 
 usage() {

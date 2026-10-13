@@ -32,7 +32,7 @@ user-visible changes in [CHANGELOG.md](CHANGELOG.md).
   2.55, Ctrl+C keeps the statistics, screen and log, in mintty (checked by
   hand) and in a Windows console (now tested in CI on every push). The exit
   code afterwards is 130; documented.*
-- [ ] **5. Release v0.0.2** (pre-release).
+- [x] **5. Release v0.0.2** (pre-release).
 
 ## v0.0.3: optional features
 

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.2] - 2026-10-13
+
 ### Added
 
 - Log file option: `--log FILE` (bash) and `-LogFile <path>` (PowerShell).
@@ -51,5 +53,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PowerShell: falls back to a plain pipeline under Constrained Language Mode.
 - Version display: `-Version` (PowerShell) and `--version` (bash).
 
-[Unreleased]: https://github.com/kismetgerald/PingStamp/compare/v0.0.1...HEAD
+[Unreleased]: https://github.com/kismetgerald/PingStamp/compare/v0.0.2...HEAD
+[0.0.2]: https://github.com/kismetgerald/PingStamp/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/kismetgerald/PingStamp/releases/tag/v0.0.1
