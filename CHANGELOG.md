@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for filtering with `Where-Object` and exporting with `Export-Csv`. Works in
   Constrained Language Mode too.
 
+### Fixed
+
+- PowerShell: `-Version` failed when the script was in a folder whose name
+  contains `[` or `]`.
+
 ## [0.0.2] - 2026-10-13
 
 ### Added

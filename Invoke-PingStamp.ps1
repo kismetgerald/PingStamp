@@ -367,7 +367,8 @@ function Write-LogLine {
 # --- Arguments ---------------------------------------------------------------
 
 if ($args.Count -eq 1 -and "$($args[0])" -eq '-Version') {
-    $match = Select-String -Path $PSCommandPath -Pattern '^\.VERSION\s+(\S+)' |
+    # -LiteralPath: with -Path, brackets in a folder name act as wildcards.
+    $match = Select-String -LiteralPath $PSCommandPath -Pattern '^\.VERSION\s+(\S+)' |
         Select-Object -First 1
     'Invoke-PingStamp {0}' -f $match.Matches[0].Groups[1].Value
     exit 0

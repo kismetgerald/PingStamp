@@ -121,6 +121,19 @@ $version = (Select-String -Path $script -Pattern '^\.VERSION\s+(\S+)').Matches[0
 $r = Invoke-Child -ArgumentList '-File', $script, '-Version'
 Test-That "-Version prints $version" ($r.Lines -contains "Invoke-PingStamp $version")
 
+# Brackets in a folder name are wildcards to -Path parameters.
+$bracketDir = [IO.Path]::Combine($tempDir, "pingstamp [test] $PID")
+$null = [IO.Directory]::CreateDirectory($bracketDir)
+$bracketCopy = [IO.Path]::Combine($bracketDir, 'Invoke-PingStamp.ps1')
+[IO.File]::Copy($script, $bracketCopy, $true)
+$r = Invoke-Child -ArgumentList '-File', $bracketCopy, '-Version'
+Test-That '-Version works from a folder with [brackets] in its name' (
+    $r.Lines -contains "Invoke-PingStamp $version")
+$r = Invoke-Child -ArgumentList '-File', $bracketCopy, $count, '1', '127.0.0.1'
+Test-That 'pinging works from a folder with [brackets] in its name' (
+    $r.ExitCode -eq 0 -and (Get-StampedLine -Lines $r.Lines).Count -eq 1)
+[IO.Directory]::Delete($bracketDir, $true)
+
 $r = Invoke-Child -ArgumentList '-File', $script
 Test-That 'no arguments exits 2' ($r.ExitCode -eq 2)
 Test-That 'no arguments prints usage' (@($r.Lines -match '^Usage:').Count -eq 1)
