@@ -250,6 +250,10 @@ $r = Invoke-Feed -Scenario 'unreadable'
 Test-That 'outage: none when no reply can be recognized (localized output)' (
     @($r.Lines -match $outagePattern).Count -eq 0)
 
+$r = Invoke-Feed -Scenario 'recovery' -Option '-Records'
+Test-That '-AsObject records: the outage has Type Outage, without a timestamp in Line' (
+    @($r.Lines -match "^Outage`t\*\*\* Outage: 3 replies lost").Count -eq 1)
+
 $r = Invoke-Feed -Scenario 'recovery' -Option '-NoOutages'
 Test-That '-NoOutages: no outage line' (@($r.Lines -match $outagePattern).Count -eq 0)
 
@@ -281,6 +285,40 @@ if (-not $onWindows) {
         ($logLines -join "`n") -eq ($r.Lines -join "`n"))
     Remove-Item -Path $log, $fakeDir -Recurse -ErrorAction SilentlyContinue
 }
+
+# --- -AsObject ----------------------------------------------------------------
+# Objects can't cross the process boundary as objects, so the child describes
+# each one on a line: <Timestamp's type>|<its Kind>|<Type>|<Line>.
+
+$describe = "ForEach-Object { '{0}|{1}|{2}|{3}' -f `$_.Timestamp.GetType().Name, " +
+    "`$_.Timestamp.Kind, `$_.Type, `$_.Line }"
+$log = Join-Path -Path $tempDir -ChildPath "pingstamp-asobject-$PID.log"
+Remove-Item -Path $log -ErrorAction SilentlyContinue
+$r = Invoke-Child -ArgumentList '-Command', (
+    "& '$script' -AsObject $count 2 127.0.0.1 -LogFile '$log' | $describe; exit `$LASTEXITCODE")
+$rows = @($r.Lines | Where-Object { $_ -like '*|*|*|*' } | ForEach-Object {
+    $fields = $_ -split '\|', 4
+    [pscustomobject]@{ TimeType = $fields[0]; Kind = $fields[1]; Type = $fields[2]; Line = $fields[3] }
+})
+$probes = @($rows | Where-Object { $_.Type -eq 'Probe' })
+Test-That '-AsObject: exits 0' ($r.ExitCode -eq 0)
+Test-That '-AsObject: one object per line, each with a [datetime] Timestamp' (
+    $rows.Count -ge 6 -and @($rows | Where-Object { $_.TimeType -ne 'DateTime' }).Count -eq 0)
+Test-That '-AsObject: local time by default' (@($rows | Where-Object { $_.Kind -ne 'Local' }).Count -eq 0)
+Test-That '-AsObject: 2 Probe objects, Line without a timestamp' (
+    $probes.Count -eq 2 -and @($probes | Where-Object { $_.Line -match $stampPattern }).Count -eq 0)
+Test-That '-AsObject: Header first, statistics are Summary' (
+    $rows.Count -gt 0 -and $rows[0].Type -eq 'Header' -and
+    @($rows | Where-Object { $_.Line -match 'statistics' -and $_.Type -eq 'Summary' }).Count -eq 1)
+$script:lastOutput = @(Get-Content -Path $log -ErrorAction SilentlyContinue)
+Test-That '-AsObject: -LogFile still gets timestamped text' (
+    (Get-StampedLine -Lines $script:lastOutput).Count -eq 2)
+Remove-Item -Path $log -ErrorAction SilentlyContinue
+
+$r = Invoke-Child -ArgumentList '-Command', (
+    "& '$script' -AsObject -Utc $count 1 127.0.0.1 | $describe; exit `$LASTEXITCODE")
+Test-That '-AsObject -Utc: Timestamps are UTC' (
+    @($r.Lines -like '*|*|*|*').Count -gt 0 -and @($r.Lines -like 'DateTime|Utc|*').Count -eq @($r.Lines -like '*|*|*|*').Count)
 
 # --- -Utc ---------------------------------------------------------------------
 
@@ -356,34 +394,38 @@ $script:lastOutput = @(Get-Content -Path $log -ErrorAction SilentlyContinue)
 Test-That 'Constrained Language Mode: -LogFile works' ((Get-StampedLine -Lines $script:lastOutput).Count -eq 2)
 Remove-Item -Path $log -ErrorAction SilentlyContinue
 
-# --- Ctrl+C (with -LogFile) ---------------------------------------------------
+# --- Ctrl+C -------------------------------------------------------------------
 
-$ctrlLog = Join-Path -Path $tempDir -ChildPath "pingstamp-ctrlc-$PID.log"
-Remove-Item -Path $ctrlLog -ErrorAction SilentlyContinue
-$lines = $null
-if ($onWindows) {
-    $python = Get-Command -Name python, py -CommandType Application -ErrorAction SilentlyContinue |
-        Select-Object -First 1
-    if ($python) {
+function Invoke-CtrlC {
+    # Runs the script with the given options on a continuous ping of
+    # 127.0.0.1, sends Ctrl+C after a few seconds, and returns what it
+    # printed. Returns nothing on Windows without Python.
+    param([string[]] $Option)
+    if ($onWindows) {
+        $python = Get-Command -Name python, py -CommandType Application -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if (-not $python) { return }
         $harness = Join-Path -Path $PSScriptRoot -ChildPath 'ctrlc_harness.py'
-        $lines = @(& $python.Source -I $harness 3.5 $shell -NoProfile -ExecutionPolicy Bypass `
-            -File $script -t 127.0.0.1 -LogFile $ctrlLog)
+        return @(& $python.Source -I $harness 3.5 $shell -NoProfile -ExecutionPolicy Bypass `
+            -File $script -t 127.0.0.1 @Option)
     }
-    else {
-        Write-Host 'skip Ctrl+C: Python not found (needed for tests/ctrlc_harness.py)'
-    }
-}
-else {
     # Job control gives the child its own process group with SIGINT at its
     # default, so the signal reaches pwsh and ping as a terminal's Ctrl+C would.
     $out = Join-Path -Path $tempDir -ChildPath "pingstamp-ctrlc-$PID.txt"
-    bash -c 'set -m; "$0" -NoProfile -File "$1" 127.0.0.1 -LogFile "$3" > "$2" 2>&1 & pid=$!; set +m; sleep 4; kill -INT -- -$pid; wait $pid' `
-        $shell $script $out $ctrlLog
-    $lines = @(Get-Content -Path $out)
+    bash -c 'set -m; "$0" -NoProfile -File "$1" 127.0.0.1 "${@:3}" > "$2" 2>&1 & pid=$!; set +m; sleep 4; kill -INT -- -$pid; wait $pid' `
+        $shell $script $out @Option
+    @(Get-Content -Path $out)
     Remove-Item -Path $out -ErrorAction SilentlyContinue
 }
 
-if ($null -ne $lines) {
+$ctrlLog = Join-Path -Path $tempDir -ChildPath "pingstamp-ctrlc-$PID.log"
+Remove-Item -Path $ctrlLog -ErrorAction SilentlyContinue
+$lines = Invoke-CtrlC -Option '-LogFile', $ctrlLog
+if ($null -eq $lines) {
+    Write-Host 'skip Ctrl+C: Python not found (needed for tests/ctrlc_harness.py)'
+}
+else {
+    $lines = @($lines)
     $logLines = @(Get-Content -Path $ctrlLog -ErrorAction SilentlyContinue)
     Remove-Item -Path $ctrlLog -ErrorAction SilentlyContinue
     Test-CtrlCOutput -Lines $lines -Label 'Ctrl+C'
@@ -395,6 +437,12 @@ if ($null -ne $lines) {
                 ($pair[1] | Where-Object { $_.Trim() } | Select-Object -Last 1) -eq 'Control-C')
         }
     }
+
+    # With -AsObject the pipeline shows objects, but after Ctrl+C the
+    # statistics still reach the console as text.
+    $script:lastOutput = @(Invoke-CtrlC -Option '-AsObject')
+    Test-That 'Ctrl+C with -AsObject: statistics are shown once' (
+        @($script:lastOutput -match 'statistics').Count -eq 1)
 }
 
 # ------------------------------------------------------------------------------

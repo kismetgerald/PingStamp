@@ -45,8 +45,9 @@ user-visible changes in [CHANGELOG.md](CHANGELOG.md).
   lost over 9.0 s, from 05:35:40`. Replies are recognized by `TTL=` or a
   round-trip time, so most localized output works too, and nothing is
   reported until a reply has been recognized.*
-- [ ] **8. PowerShell objects:** `-AsObject` emits `Timestamp` (`[datetime]`)
-  and `Line`, for `Where-Object` time filters and `Export-Csv`.
+- [x] **8. PowerShell objects:** `-AsObject` emits `Timestamp` (`[datetime]`)
+  and `Line`, for `Where-Object` time filters and `Export-Csv`. *Done, with a
+  `Type` property as well (`Header`, `Probe`, `Outage`, `Summary`).*
 - [ ] **9. Release v0.0.3** (pre-release).
 
 ## Before v0.1.0 (first beta)

@@ -8,12 +8,14 @@
     Windows always runs System32\PING.EXE, so a fake ping can't stand in
     there; instead this loads the script's functions and script-scope
     settings, then passes each line of LinesFile through Format-PingLine as
-    if ping had printed it, 0.2 s apart.
+    if ping had printed it, 0.2 s apart. It prints each record's text, or
+    with -Records its Type and Line, separated by a tab.
 #>
 param(
     [string] $ScriptPath,
     [string] $LinesFile,
-    [switch] $NoOutages
+    [switch] $NoOutages,
+    [switch] $Records
 )
 
 Set-StrictMode -Version Latest
@@ -31,5 +33,7 @@ if ($NoOutages) { $script:ShowOutages = $false }
 
 foreach ($line in @(Get-Content -Path $LinesFile)) {
     Start-Sleep -Milliseconds 200
-    Format-PingLine -Line $line
+    foreach ($record in @(Format-PingLine -Line $line)) {
+        if ($Records) { "$($record.Type)`t$($record.Line)" } else { $record.Text }
+    }
 }

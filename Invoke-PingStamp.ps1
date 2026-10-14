@@ -64,6 +64,14 @@ https://github.com/kismetgerald/PingStamp/blob/main/CHANGELOG.md
     go to the console (and to -LogFile) instead. That is why -LogFile is the
     better way to keep a log than Tee-Object or ">".
 
+    With -AsObject, the pipeline gets one object per line instead of text,
+    with these properties:
+        Timestamp  [datetime] when the line arrived (UTC with -Utc)
+        Type       Header, Probe, Outage or Summary
+        Line       ping's own text, without the timestamp
+    -LogFile still gets the timestamped text, and after Ctrl+C the closing
+    statistics still go to the console as text.
+
     Under Constrained Language Mode (AppLocker/WDAC), the script falls back
     to a plain pipeline. The output is the same, but Ctrl+C discards ping's
     closing statistics.
@@ -94,6 +102,12 @@ https://github.com/kismetgerald/PingStamp/blob/main/CHANGELOG.md
     Sends ten echo requests, with timestamps in UTC.
 
 .EXAMPLE
+    .\Invoke-PingStamp.ps1 -AsObject -n 100 192.168.1.10 |
+        Where-Object Type -eq 'Probe' | Export-Csv -Path .\ping.csv -NoTypeInformation
+
+    Saves each reply and lost reply, with its timestamp, to a CSV file.
+
+.EXAMPLE
     .\Invoke-PingStamp.ps1 192.168.1.10 -n 3 -l 1472 -f
 
     Sends three 1472-byte packets with Don't Fragment set. Options may come
@@ -109,6 +123,8 @@ https://github.com/kismetgerald/PingStamp/blob/main/CHANGELOG.md
 
 .OUTPUTS
     System.String. One string per line of ping output.
+    System.Management.Automation.PSCustomObject. With -AsObject, one object
+    per line, with Timestamp, Type and Line.
 
 .NOTES
     This script declares no PowerShell parameters on purpose. Declared
@@ -116,9 +132,9 @@ https://github.com/kismetgerald/PingStamp/blob/main/CHANGELOG.md
     (-Verbose, -WarningAction, ...), would capture native ping switches such
     as -t, -v, -w and -i.
 
-    The script's own options are -LogFile, -Utc, -NoOutages, -HideDrops and
-    -Version. Exact names like these can't clash with ping's single-letter
-    switches.
+    The script's own options are -LogFile, -AsObject, -Utc, -NoOutages,
+    -HideDrops and -Version. Exact names like these can't clash with ping's
+    single-letter switches.
 
     Exit code is ping's own exit code; 2 for a usage error or a log file that
     can't be written.
@@ -133,6 +149,7 @@ $script:OnWindows = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 $script:Section = 'Header'
 $script:ZoneAbbreviations = @{}
 $script:Utc = $false
+$script:AsObject = $false
 $script:ShowOutages = $true
 $script:Lost = 0             # lost replies in the current outage
 $script:LostSince = $null    # [datetime] of the first of them
@@ -215,18 +232,29 @@ function Format-Timestamp {
     '{0} {1}' -f $Date.ToString('yyyy-MM-dd HH:mm:ss:fff', [cultureinfo]::InvariantCulture), $zone
 }
 
-function Format-OutageLine {
-    # "<timestamp> *** Outage: 3 replies lost over 9.0 s, from 05:35:40"
+function ConvertTo-PingRecord {
+    # One line of output: when it arrived, what kind of line it is (Header,
+    # Probe, Outage or Summary), ping's own text, and the text to show, which
+    # carries the timestamp for Probe and Outage lines. A hashtable, because
+    # Constrained Language Mode doesn't allow [pscustomobject].
+    param([datetime] $Timestamp, [string] $Type, [string] $Line, [string] $Text = $Line)
+    @{ Timestamp = $Timestamp; Type = $Type; Line = $Line; Text = $Text }
+}
+
+function Get-OutageRecord {
+    # "*** Outage: 3 replies lost over 9.0 s, from 05:35:40"
     param([datetime] $Now, [string] $Suffix)
     $noun = if ($script:Lost -eq 1) { 'reply' } else { 'replies' }
     $culture = [cultureinfo]::InvariantCulture
-    '{0} *** Outage: {1} {2} lost over {3} s, from {4}{5}' -f (Format-Timestamp -Date $Now),
-        $script:Lost, $noun, ($Now - $script:LostSince).TotalSeconds.ToString('0.0', $culture),
+    $outage = '*** Outage: {0} {1} lost over {2} s, from {3}{4}' -f $script:Lost, $noun,
+        ($Now - $script:LostSince).TotalSeconds.ToString('0.0', $culture),
         $script:LostSince.ToString('HH:mm:ss', $culture), $Suffix
+    ConvertTo-PingRecord -Timestamp $Now -Type 'Outage' -Line $outage `
+        -Text ('{0} {1}' -f (Format-Timestamp -Date $Now), $outage)
 }
 
 function Trace-Outage {
-    # Tracks lost replies; returns an outage line when replies come back.
+    # Tracks lost replies; returns an outage record when replies come back.
     # A probe line with a round-trip time or a TTL is a reply; any other
     # probe line ("Request timed out.", "no answer yet ...", "Destination
     # host unreachable.") is a lost reply. That means reading ping's text,
@@ -237,7 +265,7 @@ function Trace-Outage {
 
     if ($Line -match 'ttl=|time[=<]') {
         if ($script:Lost -gt 0) {
-            Format-OutageLine -Now $Now -Suffix ''
+            Get-OutageRecord -Now $Now -Suffix ''
             $script:Lost = 0
         }
         $script:SeenReply = $true
@@ -249,8 +277,8 @@ function Trace-Outage {
 }
 
 function Format-PingLine {
-    # Returns the line, timestamped if it needs one, followed by an outage
-    # line when one is due.
+    # Returns a record (see ConvertTo-PingRecord) for the line, followed by
+    # an outage record when one is due.
     #
     # Native ping output has three parts: a header line, one line per probe,
     # and a summary that starts after a blank line. Only probe lines get a
@@ -261,25 +289,31 @@ function Format-PingLine {
     # working with localized ping output.
     param([string] $Line)
 
+    $now = Get-Now
     $blank = [string]::IsNullOrWhiteSpace($Line)
     switch ($script:Section) {
         'Header' {
             if (-not $blank) { $script:Section = 'Probes' }
-            $Line
+            ConvertTo-PingRecord -Timestamp $now -Type 'Header' -Line $Line
         }
         'Probes' {
             if ($blank) {
                 # Replies were still being lost when the statistics began.
                 if ($script:ShowOutages -and $script:SeenReply -and $script:Lost -gt 0) {
-                    Format-OutageLine -Now (Get-Now) -Suffix ' (no reply since)'
+                    Get-OutageRecord -Now $now -Suffix ' (no reply since)'
                 }
                 $script:Section = 'Summary'
-                $Line
+                ConvertTo-PingRecord -Timestamp $now -Type 'Summary' -Line $Line
             }
-            elseif ($Line -match '^\s' -or $Line -clike 'PING *') { $Line }
+            elseif ($Line -clike 'PING *') {
+                ConvertTo-PingRecord -Timestamp $now -Type 'Header' -Line $Line
+            }
+            elseif ($Line -match '^\s') {
+                ConvertTo-PingRecord -Timestamp $now -Type 'Probe' -Line $Line
+            }
             else {
-                $now = Get-Now
-                '{0} {1}' -f (Format-Timestamp -Date $now), $Line
+                ConvertTo-PingRecord -Timestamp $now -Type 'Probe' -Line $Line `
+                    -Text ('{0} {1}' -f (Format-Timestamp -Date $now), $Line)
                 if ($script:ShowOutages) { Trace-Outage -Line $Line -Now $now }
             }
         }
@@ -287,7 +321,23 @@ function Format-PingLine {
             # Windows ping -t prints interim statistics on Ctrl+Break, then
             # carries on pinging.
             if ($Line -like 'Control-Break*') { $script:Section = 'Probes' }
-            $Line
+            ConvertTo-PingRecord -Timestamp $now -Type 'Summary' -Line $Line
+        }
+    }
+}
+
+function ConvertTo-PingOutput {
+    # What goes down the pipeline: the text, or with -AsObject an object per
+    # record, without the display text. New-Object rather than a
+    # [pscustomobject] cast, which Constrained Language Mode doesn't allow.
+    param([object[]] $Record)
+    foreach ($item in $Record) {
+        if ($script:AsObject) {
+            New-Object -TypeName PSObject -Property ([ordered]@{
+                Timestamp = $item.Timestamp; Type = $item.Type; Line = $item.Line })
+        }
+        else {
+            $item.Text
         }
     }
 }
@@ -306,10 +356,11 @@ function ConvertTo-ArgumentString {
 }
 
 function Write-LogLine {
-    # Appends lines to the -LogFile log, if there is one.
-    param([string[]] $Line)
+    # Appends the records' text to the -LogFile log, if there is one.
+    param([object[]] $Record)
     if ($script:LogPath) {
-        Add-Content -LiteralPath $script:LogPath -Value $Line -Encoding UTF8 -ErrorAction Stop
+        Add-Content -LiteralPath $script:LogPath -Encoding UTF8 -ErrorAction Stop `
+            -Value @(foreach ($item in $Record) { $item.Text })
     }
 }
 
@@ -322,14 +373,18 @@ if ($args.Count -eq 1 -and "$($args[0])" -eq '-Version') {
     exit 0
 }
 
-# -LogFile, -Utc, -NoOutages and -HideDrops are this script's own options:
-# take them out of the arguments, which are otherwise all for ping. They may
-# appear anywhere. "-LogFile:path" arrives as "-LogFile:" followed by the path.
+# -LogFile, -AsObject, -Utc, -NoOutages and -HideDrops are this script's own
+# options: take them out of the arguments, which are otherwise all for ping.
+# They may appear anywhere. "-LogFile:path" arrives as "-LogFile:" followed
+# by the path.
 $script:LogPath = $null
 $hideDrops = $false
 $remaining = @()
 for ($i = 0; $i -lt $args.Count; $i++) {
-    if ("$($args[$i])" -eq '-Utc') {
+    if ("$($args[$i])" -eq '-AsObject') {
+        $script:AsObject = $true
+    }
+    elseif ("$($args[$i])" -eq '-Utc') {
         $script:Utc = $true
     }
     elseif ("$($args[$i])" -eq '-NoOutages') {
@@ -352,8 +407,8 @@ for ($i = 0; $i -lt $args.Count; $i++) {
 }
 
 if ($remaining.Count -eq 0) {
-    $Host.UI.WriteErrorLine('Usage: Invoke-PingStamp.ps1 [-LogFile <path>] [-Utc] [-NoOutages] [-HideDrops]')
-    $Host.UI.WriteErrorLine('                            [ping options] <hostname | IPv4 address>')
+    $Host.UI.WriteErrorLine('Usage: Invoke-PingStamp.ps1 [-LogFile <path>] [-AsObject] [-Utc] [-NoOutages]')
+    $Host.UI.WriteErrorLine('                            [-HideDrops] [ping options] <hostname | IPv4 address>')
     $Host.UI.WriteErrorLine('All other arguments are passed to ping. For details, run:')
     $Host.UI.WriteErrorLine("  Get-Help '$PSCommandPath' -Full")
     exit 2
@@ -411,9 +466,9 @@ if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') {
     # below. A plain pipeline gives the same output, except that Ctrl+C
     # discards ping's closing statistics.
     & $pingPath @pingArguments | ForEach-Object {
-        $formatted = Format-PingLine -Line $_
-        Write-LogLine -Line $formatted
-        $formatted
+        $records = @(Format-PingLine -Line $_)
+        Write-LogLine -Record $records
+        ConvertTo-PingOutput -Record $records
     }
     exit $LASTEXITCODE
 }
@@ -431,7 +486,7 @@ $startInfo.StandardOutputEncoding = [Console]::OutputEncoding
 
 $process = [System.Diagnostics.Process]::Start($startInfo)
 $pending = $null    # line read from ping but not yet written
-$formatted = $null  # $pending, once formatted
+$formatted = $null  # the records for $pending, once formatted
 $logged = $false    # $formatted has gone to the log
 $sectionBefore = $script:Section
 $completed = $false
@@ -451,9 +506,9 @@ try {
             # below, where the line may or may not have reached the screen.
             Start-Sleep -Milliseconds 100
         }
-        Write-LogLine -Line $formatted
+        Write-LogLine -Record $formatted
         $logged = $true
-        $formatted
+        ConvertTo-PingOutput -Record $formatted
         $pending = $null
     }
     $process.WaitForExit()
@@ -479,8 +534,8 @@ finally {
 
         if ($ctrlC) {
             # Ping has printed its statistics. The pipeline is stopped, so
-            # pass the remaining lines to the host and the log. Write-Output
-            # would silently end this block.
+            # pass the remaining lines to the host and the log, as text even
+            # with -AsObject. Write-Output would silently end this block.
             if ($null -ne $pending) {
                 # Stopped part-way through this line. If it wasn't formatted
                 # yet, format it from the start.
@@ -488,13 +543,13 @@ finally {
                     $script:Section = $sectionBefore
                     $formatted = @(Format-PingLine -Line $pending)
                 }
-                foreach ($out in $formatted) { $Host.UI.WriteLine($out) }
-                if (-not $logged) { Write-LogLine -Line $formatted }
+                foreach ($record in $formatted) { $Host.UI.WriteLine($record.Text) }
+                if (-not $logged) { Write-LogLine -Record $formatted }
             }
             while ($null -ne ($line = $process.StandardOutput.ReadLine())) {
                 $formatted = @(Format-PingLine -Line $line)
-                foreach ($out in $formatted) { $Host.UI.WriteLine($out) }
-                Write-LogLine -Line $formatted
+                foreach ($record in $formatted) { $Host.UI.WriteLine($record.Text) }
+                Write-LogLine -Record $formatted
             }
         }
     }

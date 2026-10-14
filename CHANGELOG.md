@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `(no reply since)`. Outages are only reported once a reply has been
   recognized, so unreadable (localized) output never causes a false one. Turn
   them off with `--no-outages` (bash) or `-NoOutages` (PowerShell).
+- PowerShell: `-AsObject` outputs one object per line, with `Timestamp`
+  (`[datetime]`), `Type` (`Header`, `Probe`, `Outage`, `Summary`) and `Line`,
+  for filtering with `Where-Object` and exporting with `Export-Csv`. Works in
+  Constrained Language Mode too.
 
 ## [0.0.2] - 2026-10-13
 

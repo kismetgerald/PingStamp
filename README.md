@@ -100,6 +100,7 @@ The script's own options:
 | Option | Description |
 | --- | --- |
 | `-LogFile <path>` | Also append every line to a log file (see [Keeping a log](#keeping-a-log)). `-LogFile:<path>` also works |
+| `-AsObject` | Output objects instead of text (see [Objects](#objects-powershell)) |
 | `-Utc` | Timestamps in UTC instead of local time |
 | `-NoOutages` | Don't print outage lines (see [Outages](#outages)) |
 | `-HideDrops` | On Linux, don't report lost replies (see [Lost replies](#lost-replies)). No effect elsewhere |
@@ -181,6 +182,29 @@ time or a TTL is a reply, and any other line is a lost reply. Outage lines
 appear only once a reply has been recognized, so output it can't read (in some
 languages) never produces a false outage. Use `--no-outages` / `-NoOutages` to
 turn them off.
+
+### Objects (PowerShell)
+
+With `-AsObject`, `Invoke-PingStamp.ps1` outputs one object per line instead
+of text, so you can filter and export without parsing:
+
+| Property | Contents |
+| --- | --- |
+| `Timestamp` | When the line arrived, as a `[datetime]` (UTC with `-Utc`) |
+| `Type` | `Header`, `Probe` (a reply or a lost reply), `Outage` or `Summary` |
+| `Line` | `ping`'s own text, without the timestamp |
+
+```powershell
+# Every reply and lost reply, with its time, to a CSV file
+.\Invoke-PingStamp.ps1 -AsObject -n 100 192.168.1.10 |
+    Where-Object Type -eq 'Probe' | Export-Csv .\ping.csv -NoTypeInformation
+
+# Just the outages
+.\Invoke-PingStamp.ps1 -AsObject -t 192.168.1.10 | Where-Object Type -eq 'Outage'
+```
+
+`-LogFile` still writes timestamped text. After Ctrl+C, ping's statistics go
+to the console as text.
 
 ## Good to know
 

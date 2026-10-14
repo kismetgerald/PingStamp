@@ -31,11 +31,11 @@ placeholders such as `server01.example.com` and `192.168.1.10`.
   order. Where options may go relative to the target is up to the native
   `ping`: Windows and Linux accept either side, macOS needs them first.
 - **The scripts' own options must never clash with a native `ping` switch**
-  on any platform. They are `-LogFile`, `-Utc`, `-NoOutages`, `-HideDrops`,
-  `-?` and `-Version` (PowerShell), and `--log`, `--utc`, `--no-outages`,
-  `--hide-drops`, `--help` and `--version` (Bash). All but help and version
-  are taken out of the arguments wherever they appear; everything else goes
-  to `ping`.
+  on any platform. They are `-LogFile`, `-AsObject`, `-Utc`, `-NoOutages`,
+  `-HideDrops`, `-?` and `-Version` (PowerShell), and `--log`, `--utc`,
+  `--no-outages`, `--hide-drops`, `--help` and `--version` (Bash). All but
+  help and version are taken out of the arguments wherever they appear;
+  everything else goes to `ping`.
 - **The one addition to `ping`'s arguments** is `-O` on Linux, so lost
   replies get a line (see [Lost replies on Linux](#lost-replies-on-linux)).
 - **PowerShell: no `param()` block and no `[CmdletBinding()]`.** Declared
@@ -117,6 +117,20 @@ be classified therefore never produces a false outage.
 
 Bash's `stamp` also sets `STAMP_MS` (milliseconds since the epoch) on every
 timestamp path, for the duration; PowerShell keeps `[datetime]` values.
+
+### Records and -AsObject (PowerShell)
+
+`Format-PingLine` returns a record per output line: a hashtable with
+`Timestamp`, `Type` (`Header`, `Probe`, `Outage`, `Summary`), `Line` (ping's
+text) and `Text` (what is shown, stamped for `Probe` and `Outage`). Every
+output path takes what it needs: the log and the console get `Text`, and the
+pipeline gets `Text`, or with `-AsObject` an object with `Timestamp`, `Type`
+and `Line`.
+
+Records are hashtables, and `-AsObject` objects are made with
+`New-Object PSObject -Property ([ordered]@{...})`, because Constrained Language
+Mode rejects `[pscustomobject]@{...}`. The tests run in that mode, so a cast
+slipping back in fails them.
 
 ### Logging
 
