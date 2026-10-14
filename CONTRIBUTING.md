@@ -29,10 +29,10 @@ placeholders such as `server01.example.com` and `192.168.1.10`.
   order. Where options may go relative to the target is up to the native
   `ping`: Windows and Linux accept either side, macOS needs them first.
 - **The scripts' own options must never clash with a native `ping` switch**
-  on any platform. They are `-LogFile`, `-HideDrops`, `-?` and `-Version`
-  (PowerShell), and `--log`, `--hide-drops`, `--help` and `--version`
-  (Bash). The log and hide-drops options are taken out of the arguments
-  wherever they appear; everything else goes to `ping`.
+  on any platform. They are `-LogFile`, `-Utc`, `-HideDrops`, `-?` and
+  `-Version` (PowerShell), and `--log`, `--utc`, `--hide-drops`, `--help`
+  and `--version` (Bash). The log, UTC and hide-drops options are taken out
+  of the arguments wherever they appear; everything else goes to `ping`.
 - **The one addition to `ping`'s arguments** is `-O` on Linux, so lost
   replies get a line (see [Lost replies on Linux](#lost-replies-on-linux)).
 - **PowerShell: no `param()` block and no `[CmdletBinding()]`.** Declared
@@ -68,6 +68,9 @@ middle section.
 ### Timestamps
 
 Format: `YYYY-MM-DD HH:MM:SS:MS TZ`, local time, milliseconds truncated.
+With `--utc` / `-Utc`, the time is UTC and the zone is `UTC`: Bash exports
+`TZ=UTC0` (the POSIX form, which needs no time zone database and is honored by
+`printf`, `date` and `perl` alike), and PowerShell uses `[datetime]::UtcNow`.
 
 - **Bash** uses `EPOCHREALTIME` and `printf '%(...)T'` on bash 5 (no external
   processes). It falls back to GNU `date +%3N` on older bash, then to `perl`

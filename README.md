@@ -100,6 +100,7 @@ The script's own options:
 | Option | Description |
 | --- | --- |
 | `-LogFile <path>` | Also append every line to a log file (see [Keeping a log](#keeping-a-log)). `-LogFile:<path>` also works |
+| `-Utc` | Timestamps in UTC instead of local time |
 | `-HideDrops` | On Linux, don't report lost replies (see [Lost replies](#lost-replies)). No effect elsewhere |
 | `-?` | Show help. `Get-Help .\Invoke-PingStamp.ps1 -Full` shows all of it |
 | `-Version` | Show the script version (use it on its own) |
@@ -118,12 +119,13 @@ The script's own options:
 | Option | Description |
 | --- | --- |
 | `--log FILE` | Also append every line to a log file (see [Keeping a log](#keeping-a-log)). `--log=FILE` also works |
+| `--utc` | Timestamps in UTC instead of local time |
 | `--hide-drops` | On Linux, don't report lost replies (see [Lost replies](#lost-replies)). No effect elsewhere |
 | `--help` | Show help (first argument only) |
 | `--version` | Show the script version (first argument only) |
 
-The log and lost-reply options can go anywhere in the arguments. Everything
-else is passed to `ping` unchanged.
+These options can go anywhere in the arguments. Everything else is passed to
+`ping` unchanged.
 
 ### Keeping a log
 
@@ -160,10 +162,11 @@ reply should produce a line.
   line. The header and the closing statistics are printed unchanged, as are
   indented continuation lines such as the route printed by `-r`. Non-English
   `ping` output works too.
-- **Timestamps** are local time in the format `YYYY-MM-DD HH:MM:SS:MS TZ`.
-  Milliseconds are truncated, not rounded. Windows only has long time zone
-  names, so the PowerShell script abbreviates them (Eastern Daylight Time
-  becomes EDT).
+- **Timestamps** are local time in the format `YYYY-MM-DD HH:MM:SS:MS TZ`,
+  or UTC with `--utc` / `-Utc` (handy for matching logs from different time
+  zones). Milliseconds are truncated, not rounded. Windows only has long time
+  zone names, so the PowerShell script abbreviates them (Eastern Daylight
+  Time becomes EDT).
 - **Ctrl+C** stops a continuous ping and still shows ping's statistics.
 - **Exit code.** Each script exits with `ping`'s own exit code, so it works in
   other scripts and monitoring checks just like `ping`. A usage error exits

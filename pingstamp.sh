@@ -10,7 +10,7 @@
 # Self-contained: needs only bash 3.2+ and ping. Works with Linux (iputils),
 # macOS/BSD ping, and Windows ping.exe under Git Bash, MSYS2 or Cygwin.
 #
-# Usage:    pingstamp.sh [--log FILE] [--hide-drops] [PING_OPTIONS] TARGET
+# Usage:    pingstamp.sh [--log FILE] [--utc] [--hide-drops] [PING_OPTIONS] TARGET
 #           pingstamp.sh --help | --version
 #
 # Apart from the script's own options, every argument is passed to ping
@@ -25,7 +25,7 @@ readonly PROG=${0##*/}
 
 usage() {
     cat <<EOF
-Usage: $PROG [--log FILE] [--hide-drops] [PING_OPTIONS] TARGET
+Usage: $PROG [--log FILE] [--utc] [--hide-drops] [PING_OPTIONS] TARGET
        $PROG --help | --version
 
 Run this system's ping command and prefix each reply line with a timestamp in
@@ -43,6 +43,7 @@ Windows and macOS ping report lost replies on their own.
   --log FILE    Also append every line, as shown, to FILE (created if
                 needed). Unlike '| tee', this keeps ping's statistics after
                 Ctrl+C. May appear anywhere; --log=FILE also works.
+  --utc         Timestamps in UTC instead of local time.
   --hide-drops  Don't add -O on Linux. No effect elsewhere.
   --help        Show this help and exit (first argument only).
   --version     Show the version and exit (first argument only).
@@ -51,6 +52,7 @@ Examples:
   $PROG google.com                         Ping until Ctrl+C (Linux, macOS)
   $PROG -c 10 192.168.1.10                 Send 10 echo requests
   $PROG --log ping.log 192.168.1.10        Ping until Ctrl+C, keeping a log
+  $PROG --utc -c 10 192.168.1.10           Timestamps in UTC
   $PROG -c 5 -i 0.2 -s 1400 192.168.1.10   Any other native options
   $PROG -n 10 192.168.1.10                 Windows ping under Git Bash
 EOF
@@ -158,14 +160,20 @@ case ${1:-} in
     --version) printf '%s %s\n' "$PROG" "$VERSION"; exit 0 ;;
 esac
 
-# --log and --hide-drops are this script's own options: take them out of
-# the arguments, which are otherwise all for ping. They may appear anywhere.
+# --log, --utc and --hide-drops are this script's own options: take them
+# out of the arguments, which are otherwise all for ping. They may appear
+# anywhere.
 LOG_FILE=""
 log_given=false
+utc=false
 hide_drops=false
 ping_args=()
 while (( $# > 0 )); do
     case $1 in
+        --utc)
+            utc=true
+            shift
+            ;;
         --hide-drops)
             hide_drops=true
             shift
@@ -194,6 +202,12 @@ fi
 if (( ${#ping_args[@]} == 0 )); then
     usage >&2
     exit 2
+fi
+
+if [[ $utc == true ]]; then
+    # Every timestamp method (bash's printf, date, perl) follows TZ. UTC0 is
+    # the POSIX form: zero offset, named UTC, no time zone database needed.
+    export TZ=UTC0
 fi
 
 if [[ -n $LOG_FILE ]]; then

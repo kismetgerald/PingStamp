@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- UTC timestamps: `--utc` (bash) and `-Utc` (PowerShell) stamp lines in UTC
+  instead of local time, for matching logs across time zones.
+
 ## [0.0.2] - 2026-10-13
 
 ### Added

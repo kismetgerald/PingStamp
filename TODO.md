@@ -36,8 +36,8 @@ user-visible changes in [CHANGELOG.md](CHANGELOG.md).
 
 ## v0.0.3: optional features
 
-- [ ] **6. UTC timestamps:** `--utc` / `-Utc`, for matching logs across
-  sites and time zones.
+- [x] **6. UTC timestamps:** `--utc` / `-Utc`, for matching logs across
+  sites and time zones. *Done.*
 - [ ] **7. Outage summary.** When replies return after failures, print one
   line such as `outage 05:35:40 -> 05:35:52 (12 s, 12 lost)`. This needs to
   recognize reply text, so it works with English output only.

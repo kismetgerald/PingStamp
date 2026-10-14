@@ -44,6 +44,8 @@ https://github.com/kismetgerald/PingStamp/blob/main/CHANGELOG.md
     the script adds -O, which prints "no answer yet for icmp_seq=N" instead.
     Use -HideDrops to turn that off; it has no effect elsewhere.
 
+    Timestamps use local time. Use -Utc for UTC instead.
+
     To keep a log, use -LogFile <path>. Every line, timestamped as on screen,
     is appended to that file as it arrives, including ping's statistics after
     Ctrl+C. -LogFile is the script's own option and may appear anywhere in the
@@ -81,6 +83,11 @@ https://github.com/kismetgerald/PingStamp/blob/main/CHANGELOG.md
     statistics included.
 
 .EXAMPLE
+    .\Invoke-PingStamp.ps1 -Utc -n 10 192.168.1.10
+
+    Sends ten echo requests, with timestamps in UTC.
+
+.EXAMPLE
     .\Invoke-PingStamp.ps1 192.168.1.10 -n 3 -l 1472 -f
 
     Sends three 1472-byte packets with Don't Fragment set. Options may come
@@ -103,8 +110,8 @@ https://github.com/kismetgerald/PingStamp/blob/main/CHANGELOG.md
     (-Verbose, -WarningAction, ...), would capture native ping switches such
     as -t, -v, -w and -i.
 
-    The script's own options are -LogFile, -HideDrops and -Version. Exact
-    names like these can't clash with ping's single-letter switches.
+    The script's own options are -LogFile, -Utc, -HideDrops and -Version.
+    Exact names like these can't clash with ping's single-letter switches.
 
     Exit code is ping's own exit code; 2 for a usage error or a log file that
     can't be written.
@@ -118,6 +125,7 @@ Set-StrictMode -Version Latest
 $script:OnWindows = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 $script:Section = 'Header'
 $script:ZoneAbbreviations = @{}
+$script:Utc = $false
 
 function Get-ZoneAbbreviation {
     # Returns the local time zone abbreviation (e.g. EDT) in effect at $Date.
@@ -186,10 +194,16 @@ function Get-ZoneAbbreviation {
 }
 
 function Get-Timestamp {
-    $now = [datetime]::Now
+    if ($script:Utc) {
+        $now = [datetime]::UtcNow
+        $zone = 'UTC'
+    }
+    else {
+        $now = [datetime]::Now
+        $zone = Get-ZoneAbbreviation -Date $now
+    }
     # Invariant culture: ':' in a format string is the culture's time separator.
-    '{0} {1}' -f $now.ToString('yyyy-MM-dd HH:mm:ss:fff', [cultureinfo]::InvariantCulture),
-        (Get-ZoneAbbreviation -Date $now)
+    '{0} {1}' -f $now.ToString('yyyy-MM-dd HH:mm:ss:fff', [cultureinfo]::InvariantCulture), $zone
 }
 
 function Format-PingLine {
@@ -252,14 +266,17 @@ if ($args.Count -eq 1 -and "$($args[0])" -eq '-Version') {
     exit 0
 }
 
-# -LogFile and -HideDrops are this script's own options: take them out of
-# the arguments, which are otherwise all for ping. They may appear anywhere.
-# "-LogFile:path" arrives as "-LogFile:" followed by the path.
+# -LogFile, -Utc and -HideDrops are this script's own options: take them out
+# of the arguments, which are otherwise all for ping. They may appear
+# anywhere. "-LogFile:path" arrives as "-LogFile:" followed by the path.
 $script:LogPath = $null
 $hideDrops = $false
 $remaining = @()
 for ($i = 0; $i -lt $args.Count; $i++) {
-    if ("$($args[$i])" -eq '-HideDrops') {
+    if ("$($args[$i])" -eq '-Utc') {
+        $script:Utc = $true
+    }
+    elseif ("$($args[$i])" -eq '-HideDrops') {
         $hideDrops = $true
     }
     elseif ("$($args[$i])" -in '-LogFile', '-LogFile:') {
@@ -276,7 +293,7 @@ for ($i = 0; $i -lt $args.Count; $i++) {
 }
 
 if ($remaining.Count -eq 0) {
-    $Host.UI.WriteErrorLine('Usage: Invoke-PingStamp.ps1 [-LogFile <path>] [-HideDrops] [ping options] <hostname | IPv4 address>')
+    $Host.UI.WriteErrorLine('Usage: Invoke-PingStamp.ps1 [-LogFile <path>] [-Utc] [-HideDrops] [ping options] <hostname | IPv4 address>')
     $Host.UI.WriteErrorLine('All other arguments are passed to ping. For details, run:')
     $Host.UI.WriteErrorLine("  Get-Help '$PSCommandPath' -Full")
     exit 2

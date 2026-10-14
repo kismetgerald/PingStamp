@@ -60,6 +60,18 @@ min_gap_ms() {
     } END { print (min == "" ? 0 : min) }'
 }
 
+# Seconds since midnight for HH:MM:SS (anything after the seconds is ignored).
+seconds_of_day() { printf '%s\n' "$1" | awk -F: '{ print ($1 * 60 + $2) * 60 + $3 }'; }
+
+# True if two HH:MM:SS times are at most two minutes apart (across midnight too).
+within_two_minutes() {
+    local a b diff
+    a=$(seconds_of_day "$1")
+    b=$(seconds_of_day "$2")
+    diff=$(( a > b ? a - b : b - a ))
+    (( diff <= 120 || diff >= 86400 - 120 ))
+}
+
 # True if the statistics follow exactly one blank line after a stamped reply.
 blank_before_statistics() {
     local line prev1="" prev2=""
@@ -169,6 +181,17 @@ fi
 "$SHELL_UNDER_TEST" "$SCRIPT" --hide-drops "$COUNT" 1 127.0.0.1 > "$TMP/hide-ok" 2>&1
 check "--hide-drops is accepted" test $? -eq 0
 check "--hide-drops is not passed to ping" test "$(stamped_count "$TMP/hide-ok")" -eq 1
+
+# --- --utc --------------------------------------------------------------------
+
+# A TZ other than UTC shows that --utc overrides it.
+TZ=Asia/Tokyo "$SHELL_UNDER_TEST" "$SCRIPT" --utc "$COUNT" 1 127.0.0.1 > "$TMP/utc" 2>&1
+utc_now=$(date -u '+%H:%M:%S')
+utc_line=$(grep -E "$STAMP_RE" "$TMP/utc" | head -n 1)
+check "--utc is not passed to ping (1 stamped line)" test "$(stamped_count "$TMP/utc")" -eq 1
+check "--utc: the zone is UTC" test "$(printf '%s\n' "$utc_line" | awk '{ print $3 }')" = UTC
+check "--utc: the time is UTC (within 2 minutes of date -u)" \
+    within_two_minutes "$(printf '%s\n' "$utc_line" | awk '{ print $2 }')" "$utc_now"
 
 # --- --log --------------------------------------------------------------------
 

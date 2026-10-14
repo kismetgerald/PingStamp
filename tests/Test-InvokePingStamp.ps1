@@ -184,6 +184,21 @@ $r = Invoke-Child -ArgumentList '-File', $script, '-HideDrops', $count, '1', '12
 Test-That '-HideDrops is accepted and not passed to ping' (
     $r.ExitCode -eq 0 -and (Get-StampedLine -Lines $r.Lines).Count -eq 1)
 
+# --- -Utc ---------------------------------------------------------------------
+
+$r = Invoke-Child -ArgumentList '-File', $script, '-Utc', $count, '1', '127.0.0.1'
+$utcNow = [datetime]::UtcNow
+$stamped = Get-StampedLine -Lines $r.Lines
+Test-That '-Utc is not passed to ping (1 stamped line)' ($r.ExitCode -eq 0 -and $stamped.Count -eq 1)
+if ($stamped.Count -eq 1) {
+    $parts = $stamped[0].Split(' ')
+    $time = [datetime]::ParseExact("$($parts[0]) $($parts[1])", 'yyyy-MM-dd HH:mm:ss:fff',
+        [cultureinfo]::InvariantCulture)
+    Test-That '-Utc: the zone is UTC' ($parts[2] -eq 'UTC')
+    Test-That '-Utc: the time is UTC (within 2 minutes)' (
+        [math]::Abs(($utcNow - $time).TotalSeconds) -le 120)
+}
+
 # --- Pipeline -----------------------------------------------------------------
 
 $log = Join-Path -Path $tempDir -ChildPath "pingstamp-test-$PID.log"
