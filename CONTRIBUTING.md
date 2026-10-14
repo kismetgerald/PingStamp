@@ -239,9 +239,42 @@ To publish:
    `VERSION=` in `pingstamp.sh`.
 2. In `CHANGELOG.md`, turn `[Unreleased]` into a section for the new version,
    and update the compare links at the bottom.
-3. Commit, create the annotated tag, and push both.
-4. Create the GitHub release (a pre-release before v1.0.0) and attach both
-   scripts.
+3. Commit and push, then **wait for CI to pass** on that commit. Don't tag a
+   commit CI hasn't passed.
+4. Build the release files from the commit in a scratch folder (not the
+   working tree), with the line endings a clone on each platform would get,
+   and check them before tagging. Both must report the new version, and the
+   PowerShell script must parse:
+
+   ```bash
+   git show HEAD:pingstamp.sh > pingstamp.sh                           # LF
+   git show HEAD:Invoke-PingStamp.ps1 | sed 's/$/\r/' > Invoke-PingStamp.ps1  # CRLF
+   bash pingstamp.sh --version
+   pwsh -NoProfile -File Invoke-PingStamp.ps1 -Version
+   ```
+
+5. Write the checksums for exactly those files. Use the two-space format
+   (`hash  name`) that `sha256sum -c`, `shasum -c` and the README's
+   PowerShell snippet all read. Git Bash's `sha256sum` writes `hash *name`,
+   hence the `sed`:
+
+   ```bash
+   sha256sum Invoke-PingStamp.ps1 pingstamp.sh | sed 's/ \*/  /' > SHA256SUMS.txt
+   ```
+
+6. Create the annotated tag and push it, then create the GitHub release (a
+   pre-release before v1.0.0) with all three files attached:
+
+   ```bash
+   gh release create vX.Y.Z Invoke-PingStamp.ps1 pingstamp.sh SHA256SUMS.txt \
+       --prerelease --verify-tag --title "PingStamp vX.Y.Z" --notes-file notes.md
+   ```
+
+7. Download the release again (`gh release download vX.Y.Z`) and run
+   `sha256sum -c SHA256SUMS.txt` on the downloads.
+
+The scripts are not code-signed, since there is no code-signing certificate
+for this project.
 
 ## Commit messages
 

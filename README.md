@@ -72,6 +72,31 @@ Unblock-File .\Invoke-PingStamp.ps1
 chmod +x pingstamp.sh
 ```
 
+### Checking a download
+
+Each release includes `SHA256SUMS.txt`. To check that your download is
+intact and unchanged, download it into the same folder as the scripts, then
+run:
+
+```powershell
+# PowerShell
+Get-Content .\SHA256SUMS.txt | ForEach-Object {
+    $hash, $file = $_ -split '\s+', 2
+    if (Test-Path $file) {
+        '{0}: {1}' -f $file, $(if ((Get-FileHash $file -Algorithm SHA256).Hash -eq $hash) { 'OK' } else { 'MISMATCH' })
+    }
+}
+```
+
+```bash
+grep pingstamp.sh SHA256SUMS.txt | sha256sum -c       # Linux, Git Bash
+grep pingstamp.sh SHA256SUMS.txt | shasum -a 256 -c   # macOS
+```
+
+The scripts are not code-signed. Under an execution policy that requires
+signed scripts (AllSigned), sign `Invoke-PingStamp.ps1` with your own
+certificate.
+
 ## Usage
 
 Give the script the same arguments you would give `ping`. The target is a

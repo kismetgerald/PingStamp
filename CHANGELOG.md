@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Each release includes `SHA256SUMS.txt`, so downloads can be checked. The
+  README shows how. Added to the v0.0.1 to v0.0.3 releases as well.
+
 ## [0.0.3] - 2026-10-14
 
 ### Added

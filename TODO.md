@@ -52,12 +52,11 @@ user-visible changes in [CHANGELOG.md](CHANGELOG.md).
 
 ## Before v0.1.0 (first beta)
 
-- [ ] **10. Authenticode-sign the PowerShell script** on each release with a
-  certificate from the internal PKI. A signed script runs under the
-  AllSigned policy and, where WDAC/AppLocker trusts the signer, in
-  FullLanguage mode, which keeps the Ctrl+C statistics. Changing the line
-  endings breaks the signature, so ship the signed copy as the release
-  download.
-- [ ] **11. PowerShell Gallery** (optional): `Publish-Script`, so
-  `Install-Script Invoke-PingStamp` works. Not useful on air-gapped
-  networks.
+- [x] **10. Checksums for release downloads.** *Replaces Authenticode
+  signing: PingStamp is a personal tool with no code-signing certificate.*
+  Each release includes `SHA256SUMS.txt` (added to v0.0.1 to v0.0.3 too),
+  the README shows how to check a download, and CONTRIBUTING.md has the
+  release steps.
+- [ ] ~~**11. PowerShell Gallery** (optional): `Publish-Script`, so
+  `Install-Script Invoke-PingStamp` works.~~ *Skipped: GitHub releases are
+  enough for a personal tool. Can be revisited.*
