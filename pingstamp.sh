@@ -10,7 +10,8 @@
 # Self-contained: needs only bash 3.2+ and ping. Works with Linux (iputils),
 # macOS/BSD ping, and Windows ping.exe under Git Bash, MSYS2 or Cygwin.
 #
-# Usage:    pingstamp.sh [--log FILE] [--utc] [--hide-drops] [PING_OPTIONS] TARGET
+# Usage:    pingstamp.sh [--log FILE] [--utc] [--no-outages] [--hide-drops]
+#                        [PING_OPTIONS] TARGET
 #           pingstamp.sh --help | --version
 #
 # Apart from the script's own options, every argument is passed to ping
@@ -25,7 +26,8 @@ readonly PROG=${0##*/}
 
 usage() {
     cat <<EOF
-Usage: $PROG [--log FILE] [--utc] [--hide-drops] [PING_OPTIONS] TARGET
+Usage: $PROG [--log FILE] [--utc] [--no-outages] [--hide-drops]
+                    [PING_OPTIONS] TARGET
        $PROG --help | --version
 
 Run this system's ping command and prefix each reply line with a timestamp in
@@ -40,10 +42,16 @@ Linux ping prints nothing for a lost reply, so $PROG adds -O there: each
 lost reply then shows as a timestamped "no answer yet for icmp_seq=N" line.
 Windows and macOS ping report lost replies on their own.
 
+When replies come back after being lost, a line such as
+  ... *** Outage: 3 replies lost over 9.0 s, from 05:35:40
+follows. If replies are still being lost at the end, the line comes just
+before the statistics, ending in "(no reply since)".
+
   --log FILE    Also append every line, as shown, to FILE (created if
                 needed). Unlike '| tee', this keeps ping's statistics after
                 Ctrl+C. May appear anywhere; --log=FILE also works.
   --utc         Timestamps in UTC instead of local time.
+  --no-outages  Don't print outage lines.
   --hide-drops  Don't add -O on Linux. No effect elsewhere.
   --help        Show this help and exit (first argument only).
   --version     Show the version and exit (first argument only).
@@ -61,8 +69,10 @@ EOF
 # ---------------------------------------------------------------------------
 # Timestamps
 #
-# STAMP is set rather than echoed so the bash 5 path stays fork-free.
-# Milliseconds are truncated, not rounded.
+# stamp sets STAMP to the timestamp text and STAMP_MS to the same moment in
+# milliseconds since the epoch (for outage durations). They are set rather
+# than echoed so the bash 5 path stays fork-free. Milliseconds are
+# truncated, not rounded.
 # ---------------------------------------------------------------------------
 
 if (( BASH_VERSINFO[0] >= 5 )) && [[ -n ${EPOCHREALTIME:-} ]]; then
@@ -71,21 +81,35 @@ if (( BASH_VERSINFO[0] >= 5 )) && [[ -n ${EPOCHREALTIME:-} ]]; then
         local now=$EPOCHREALTIME secs frac
         secs=${now%[.,]*}       # the decimal separator follows the locale
         frac=${now#*[.,]}
+        STAMP_MS=$(( secs * 1000 + 10#${frac:0:3} ))
         printf -v STAMP '%(%Y-%m-%d %H:%M:%S)T:%s %(%Z)T' \
             "$secs" "${frac:0:3}" "$secs"
     }
 elif [[ $(date +%3N 2>/dev/null) =~ ^[0-9]{3}$ ]]; then
     # GNU date (older bash, e.g. RHEL 7/8).
-    stamp() { STAMP=$(date '+%Y-%m-%d %H:%M:%S:%3N %Z'); }
+    stamp() {
+        local out
+        out=$(date '+%s%3N %Y-%m-%d %H:%M:%S:%3N %Z')
+        STAMP_MS=${out%% *}
+        STAMP=${out#* }
+    }
 elif command -v perl >/dev/null 2>&1; then
     # BSD/macOS date has no sub-second field; perl ships with macOS.
     stamp() {
-        STAMP=$(perl -MPOSIX=strftime -MTime::HiRes=time -e \
-            '$t = time; printf "%s:%03d %s", strftime("%Y-%m-%d %H:%M:%S", localtime $t), ($t - int $t) * 1000, strftime("%Z", localtime $t)')
+        local out
+        out=$(perl -MPOSIX=strftime -MTime::HiRes=time -e \
+            '$t = time; $ms = int(($t - int $t) * 1000); printf "%d %s:%03d %s", int($t) * 1000 + $ms, strftime("%Y-%m-%d %H:%M:%S", localtime $t), $ms, strftime("%Z", localtime $t)')
+        STAMP_MS=${out%% *}
+        STAMP=${out#* }
     }
 else
     # Last resort: whole seconds only.
-    stamp() { STAMP=$(date '+%Y-%m-%d %H:%M:%S:000 %Z'); }
+    stamp() {
+        local out
+        out=$(date '+%s %Y-%m-%d %H:%M:%S:000 %Z')
+        STAMP_MS=$(( ${out%% *} * 1000 ))
+        STAMP=${out#* }
+    }
 fi
 
 # ---------------------------------------------------------------------------
@@ -116,6 +140,48 @@ emit() {
     fi
 }
 
+# ---------------------------------------------------------------------------
+# Outages
+#
+# A probe line with a round-trip time or a TTL is a reply; any other probe
+# line ("Request timed out.", "no answer yet ...", "Destination host
+# unreachable.") is a lost reply. That means reading ping's text, which is
+# localized, so an outage is reported only once a reply has been recognized:
+# output this can't read never produces a false outage. TTL= is the same in
+# every language Windows ping speaks.
+# ---------------------------------------------------------------------------
+
+REPLY_RE='[Tt][Tt][Ll]=|[Tt][Ii][Mm][Ee][=<]'
+lost=0                  # lost replies in the current outage
+lost_since=""           # HH:MM:SS of the first of them
+lost_since_ms=0
+seen_reply=false
+
+# Print the outage line, stamped with STAMP; $1 is appended to it.
+emit_outage() {
+    local noun=replies tenths
+    (( lost == 1 )) && noun=reply
+    tenths=$(( (STAMP_MS - lost_since_ms + 50) / 100 ))
+    emit "$STAMP *** Outage: $lost $noun lost over $(( tenths / 10 )).$(( tenths % 10 )) s, from $lost_since$1"
+}
+
+# Update the outage state for a probe line that was just stamped.
+track_outage() {
+    if [[ $1 =~ $REPLY_RE ]]; then
+        if (( lost > 0 )); then
+            emit_outage ""
+            lost=0
+        fi
+        seen_reply=true
+    else
+        if (( lost == 0 )); then
+            lost_since=${STAMP:11:8}
+            lost_since_ms=$STAMP_MS
+        fi
+        lost=$(( lost + 1 ))
+    fi
+}
+
 stamp_lines() {
     # Ctrl+C goes to ping and to us. Ping answers it by printing its
     # statistics; ignoring it here keeps us alive to pass them through.
@@ -132,6 +198,11 @@ stamp_lines() {
                 ;;
             probes)
                 if [[ -z ${line//[[:space:]]/} ]]; then
+                    # Replies were still being lost when the statistics began.
+                    if [[ $show_outages == true && $seen_reply == true ]] && (( lost > 0 )); then
+                        stamp
+                        emit_outage " (no reply since)"
+                    fi
                     state=summary
                     emit "$line"
                 elif [[ $line == [[:space:]]* || $line == 'PING '* ]]; then
@@ -139,6 +210,9 @@ stamp_lines() {
                 else
                     stamp
                     emit "$STAMP $line"
+                    if [[ $show_outages == true ]]; then
+                        track_outage "$line"
+                    fi
                 fi
                 ;;
             summary)
@@ -160,18 +234,23 @@ case ${1:-} in
     --version) printf '%s %s\n' "$PROG" "$VERSION"; exit 0 ;;
 esac
 
-# --log, --utc and --hide-drops are this script's own options: take them
-# out of the arguments, which are otherwise all for ping. They may appear
-# anywhere.
+# --log, --utc, --no-outages and --hide-drops are this script's own options:
+# take them out of the arguments, which are otherwise all for ping. They may
+# appear anywhere.
 LOG_FILE=""
 log_given=false
 utc=false
+show_outages=true
 hide_drops=false
 ping_args=()
 while (( $# > 0 )); do
     case $1 in
         --utc)
             utc=true
+            shift
+            ;;
+        --no-outages)
+            show_outages=false
             shift
             ;;
         --hide-drops)

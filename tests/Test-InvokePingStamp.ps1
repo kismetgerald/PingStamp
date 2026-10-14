@@ -184,6 +184,104 @@ $r = Invoke-Child -ArgumentList '-File', $script, '-HideDrops', $count, '1', '12
 Test-That '-HideDrops is accepted and not passed to ping' (
     $r.ExitCode -eq 0 -and (Get-StampedLine -Lines $r.Lines).Count -eq 1)
 
+# --- Outages ------------------------------------------------------------------
+# Lost replies can't be produced on demand. tests/fake-ping.sh holds scripted
+# ping output; its lines are fed to the script's own functions here on every
+# platform (tests/feed-lines.ps1). On Linux and macOS, the whole script also
+# runs against fake-ping.sh, put first in PATH. Windows always uses
+# System32\PING.EXE, so that can't be faked.
+
+$outagePattern = "$stampPattern\*\*\* Outage: "
+
+function Get-FakePingLine {
+    # The lines tests/fake-ping.sh prints for a scenario.
+    param([string] $Scenario)
+    $text = Get-Content -Raw -Path (Join-Path -Path $PSScriptRoot -ChildPath 'fake-ping.sh')
+    $block = [regex]::Match($text, '(?ms)^\s+' + $Scenario + '\)\s*$(.*?)^\s+;;').Groups[1].Value
+    , @([regex]::Matches($block, 'say "(.*)"') | ForEach-Object { $_.Groups[1].Value })
+}
+
+function Invoke-Feed {
+    # Feeds a fake-ping.sh scenario to the script's functions; returns the output.
+    param([string] $Scenario, [string[]] $Option = @())
+    $linesFile = Join-Path -Path $tempDir -ChildPath "pingstamp-feed-$PID.txt"
+    Set-Content -Path $linesFile -Value (Get-FakePingLine -Scenario $Scenario)
+    $feeder = Join-Path -Path $PSScriptRoot -ChildPath 'feed-lines.ps1'
+    $result = Invoke-Child -ArgumentList (@('-File', $feeder, '-ScriptPath', $script,
+        '-LinesFile', $linesFile) + $Option)
+    Remove-Item -Path $linesFile -ErrorAction SilentlyContinue
+    $result
+}
+
+function Get-LineAfter {
+    # The line after the first line matching $Pattern.
+    param([string[]] $Lines, [string] $Pattern)
+    for ($i = 0; $i -lt $Lines.Count - 1; $i++) {
+        if ($Lines[$i] -match $Pattern) { return $Lines[$i + 1] }
+    }
+}
+
+$r = Invoke-Feed -Scenario 'recovery'
+$outages = @($r.Lines -match $outagePattern)
+$firstLost = @($r.Lines -match "${stampPattern}no answer yet")[0].Substring(11, 8)
+Test-That 'outage: one line once replies come back' ($outages.Count -eq 1)
+Test-That 'outage: it follows the reply that ended it' (
+    $outages.Count -eq 1 -and (Get-LineAfter -Lines $r.Lines -Pattern 'icmp_seq=5 ') -eq $outages[0])
+Test-That "outage: '3 replies lost over N.N s, from HH:MM:SS'" (
+    $outages.Count -eq 1 -and $outages[0] -match "${outagePattern}3 replies lost over \d+\.\d s, from \d\d:\d\d:\d\d$")
+Test-That "outage: 'from' is when the first lost reply was reported" (
+    $outages.Count -eq 1 -and $outages[0].EndsWith("from $firstLost"))
+if ($outages.Count -eq 1 -and $outages[0] -match ' over ([\d.]+) s') {
+    $seconds = [double]::Parse($Matches[1], [cultureinfo]::InvariantCulture)
+    Test-That "outage: duration is plausible ($seconds s)" ($seconds -ge 0.3 -and $seconds -le 3.0)
+}
+
+$r = Invoke-Feed -Scenario 'ongoing'
+Test-That "outage still going at the end: '(no reply since)' line" (
+    @($r.Lines -match "${outagePattern}2 replies lost over \d+\.\d s, from [\d:]{8} \(no reply since\)$").Count -eq 1)
+Test-That 'outage still going at the end: just before the statistics' (
+    [string]::IsNullOrEmpty((Get-LineAfter -Lines $r.Lines -Pattern $outagePattern)))
+
+$r = Invoke-Feed -Scenario 'windows'
+Test-That "outage: Windows style, down from the start ('Reply from ...: unreachable' is lost)" (
+    @($r.Lines -match "${outagePattern}2 replies lost over ").Count -eq 1)
+
+$r = Invoke-Feed -Scenario 'unreadable'
+Test-That 'outage: none when no reply can be recognized (localized output)' (
+    @($r.Lines -match $outagePattern).Count -eq 0)
+
+$r = Invoke-Feed -Scenario 'recovery' -Option '-NoOutages'
+Test-That '-NoOutages: no outage line' (@($r.Lines -match $outagePattern).Count -eq 0)
+
+$r = Invoke-Child -ArgumentList '-File', $script, '-NoOutages', $count, '1', '127.0.0.1'
+Test-That '-NoOutages is not passed to the real ping' (
+    $r.ExitCode -eq 0 -and (Get-StampedLine -Lines $r.Lines).Count -eq 1)
+
+if (-not $onWindows) {
+    $fakeDir = Join-Path -Path $tempDir -ChildPath "pingstamp-fakebin-$PID"
+    $null = New-Item -ItemType Directory -Path $fakeDir -Force
+    $fakePing = Join-Path -Path $fakeDir -ChildPath 'ping'
+    Copy-Item -Path (Join-Path -Path $PSScriptRoot -ChildPath 'fake-ping.sh') -Destination $fakePing
+    chmod +x $fakePing
+    $log = Join-Path -Path $tempDir -ChildPath "pingstamp-outage-$PID.log"
+    Remove-Item -Path $log -ErrorAction SilentlyContinue
+
+    $savedPath = $env:PATH
+    $env:PATH = $fakeDir + [IO.Path]::PathSeparator + $env:PATH
+    $env:FAKE_PING_SCENARIO = 'recovery'
+    $r = Invoke-Child -ArgumentList '-File', $script, '-LogFile', $log, '192.0.2.1'
+    $env:PATH = $savedPath
+    Remove-Item -Path Env:FAKE_PING_SCENARIO
+
+    $outages = @($r.Lines -match $outagePattern)
+    Test-That 'outage, whole script on a fake ping: line after the reply that ended it' (
+        $outages.Count -eq 1 -and (Get-LineAfter -Lines $r.Lines -Pattern 'icmp_seq=5 ') -eq $outages[0])
+    $logLines = @(Get-Content -Path $log -ErrorAction SilentlyContinue)
+    Test-That 'outage, whole script on a fake ping: the log matches the output' (
+        ($logLines -join "`n") -eq ($r.Lines -join "`n"))
+    Remove-Item -Path $log, $fakeDir -Recurse -ErrorAction SilentlyContinue
+}
+
 # --- -Utc ---------------------------------------------------------------------
 
 $r = Invoke-Child -ArgumentList '-File', $script, '-Utc', $count, '1', '127.0.0.1'

@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - UTC timestamps: `--utc` (bash) and `-Utc` (PowerShell) stamp lines in UTC
   instead of local time, for matching logs across time zones.
+- Outage lines: when replies come back after being lost, a line such as
+  `*** Outage: 3 replies lost over 9.0 s, from 05:35:40` follows. If replies
+  are still being lost at the end, it comes before the statistics, ending in
+  `(no reply since)`. Outages are only reported once a reply has been
+  recognized, so unreadable (localized) output never causes a false one. Turn
+  them off with `--no-outages` (bash) or `-NoOutages` (PowerShell).
 
 ## [0.0.2] - 2026-10-13
 

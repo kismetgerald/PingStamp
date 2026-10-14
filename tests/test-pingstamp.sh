@@ -182,6 +182,61 @@ fi
 check "--hide-drops is accepted" test $? -eq 0
 check "--hide-drops is not passed to ping" test "$(stamped_count "$TMP/hide-ok")" -eq 1
 
+# --- Outages ------------------------------------------------------------------
+# Lost replies can't be produced on demand, so tests/fake-ping.sh plays
+# scripted ping output instead, from a directory put first in PATH.
+
+mkdir -p "$TMP/bin"
+cp tests/fake-ping.sh "$TMP/bin/ping"
+chmod +x "$TMP/bin/ping"
+OUTAGE_RE="${STAMP_RE}\*\*\* Outage: "
+
+fake_ping() {   # fake_ping SCENARIO OUTFILE [EXTRA_ARGUMENTS...]
+    local scenario=$1 out=$2
+    shift 2
+    PATH="$TMP/bin:$PATH" FAKE_PING_SCENARIO=$scenario \
+        "$SHELL_UNDER_TEST" "$SCRIPT" "$@" 192.0.2.1 > "$out" 2>&1
+}
+line_after() { grep -A 1 -E "$1" "$2" | sed -n 2p; }   # the line after a match
+
+fake_ping recovery "$TMP/out-recovery" --log "$TMP/out-recovery.log"
+outage=$(grep -E "$OUTAGE_RE" "$TMP/out-recovery")
+first_lost=$(grep -E "${STAMP_RE}no answer yet" "$TMP/out-recovery" | head -n 1 | awk '{ print substr($2, 1, 8) }')
+duration=$(printf '%s\n' "$outage" | sed -E 's/.* over ([0-9.]+) s,.*/\1/')
+check "outage: one line once replies come back" test "$(grep -cE "$OUTAGE_RE" "$TMP/out-recovery")" -eq 1
+check "outage: it follows the reply that ended it" \
+    test "$(line_after 'icmp_seq=5 ' "$TMP/out-recovery")" = "$outage"
+check "outage: '3 replies lost over N.N s, from HH:MM:SS'" \
+    grep -qE "${OUTAGE_RE}3 replies lost over [0-9]+\.[0-9] s, from [0-9]{2}:[0-9]{2}:[0-9]{2}$" \
+    "$TMP/out-recovery"
+check "outage: 'from' is when the first lost reply was reported" \
+    test "$(printf '%s\n' "$outage" | sed -E 's/.*, from //')" = "$first_lost"
+check "outage: duration is plausible (${duration} s)" \
+    awk -v d="$duration" 'BEGIN { exit !(d >= 0.3 && d <= 3.0) }'
+check "outage: the log matches the screen" cmp -s "$TMP/out-recovery.log" "$TMP/out-recovery"
+
+fake_ping ongoing "$TMP/out-ongoing"
+check "outage still going at the end: '(no reply since)' line" \
+    grep -qE "${OUTAGE_RE}2 replies lost over [0-9]+\.[0-9] s, from [0-9:]{8} \(no reply since\)$" \
+    "$TMP/out-ongoing"
+check "outage still going at the end: just before the statistics" \
+    test -z "$(line_after "$OUTAGE_RE" "$TMP/out-ongoing")"
+
+fake_ping windows "$TMP/out-windows"
+check "outage: Windows style, down from the start ('Reply from ...: unreachable' is lost)" \
+    grep -qE "${OUTAGE_RE}2 replies lost over " "$TMP/out-windows"
+
+fake_ping unreadable "$TMP/out-unreadable"
+check "outage: none when no reply can be recognized (localized output)" \
+    test "$(grep -cE "$OUTAGE_RE" "$TMP/out-unreadable")" -eq 0
+
+fake_ping recovery "$TMP/out-none" --no-outages
+check "--no-outages: no outage line" test "$(grep -cE "$OUTAGE_RE" "$TMP/out-none")" -eq 0
+check "--no-outages: probe lines are still stamped" test "$(stamped_count "$TMP/out-none")" -eq 6
+"$SHELL_UNDER_TEST" "$SCRIPT" --no-outages "$COUNT" 1 127.0.0.1 > "$TMP/no-outages-ok" 2>&1
+check "--no-outages is not passed to the real ping" \
+    test $? -eq 0 -a "$(stamped_count "$TMP/no-outages-ok")" -eq 1
+
 # --- --utc --------------------------------------------------------------------
 
 # A TZ other than UTC shows that --utc overrides it.

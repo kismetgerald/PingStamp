@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: ShellCheck
-        run: shellcheck pingstamp.sh tests/test-pingstamp.sh
+        run: shellcheck pingstamp.sh tests/test-pingstamp.sh tests/fake-ping.sh
 
       - name: PSScriptAnalyzer
         shell: pwsh
@@ -29,6 +29,7 @@ jobs:
               # The test script reports to the console on purpose.
               Invoke-ScriptAnalyzer -Path ./tests/Test-InvokePingStamp.ps1 -Severity Warning, Error `
                   -ExcludeRule PSAvoidUsingWriteHost
+              Invoke-ScriptAnalyzer -Path ./tests/feed-lines.ps1 -Severity Warning, Error
           )
           $results | Format-Table -AutoSize -Wrap RuleName, ScriptName, Line, Message
           if ($results.Count -gt 0) { exit 1 }

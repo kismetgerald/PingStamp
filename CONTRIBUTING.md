@@ -17,6 +17,8 @@ placeholders such as `server01.example.com` and `192.168.1.10`.
 | `tests/test-pingstamp.sh` | Bash tests: Linux, macOS, Git Bash on Windows |
 | `tests/Test-InvokePingStamp.ps1` | PowerShell tests: Windows, Linux, macOS |
 | `tests/ctrlc_harness.py` | Sends a real console Ctrl+C on Windows (used by both test scripts) |
+| `tests/fake-ping.sh` | Scripted `ping` output with lost replies, for the outage tests |
+| `tests/feed-lines.ps1` | Feeds those lines to the PowerShell script's functions (Windows can't use a fake `ping`) |
 | `.github/workflows/ci.yml` | Runs the tests and linters on every push |
 | `CHANGELOG.md` | Changes per version ([Keep a Changelog](https://keepachangelog.com/)) |
 | `TODO.md` | Planned work |
@@ -29,10 +31,11 @@ placeholders such as `server01.example.com` and `192.168.1.10`.
   order. Where options may go relative to the target is up to the native
   `ping`: Windows and Linux accept either side, macOS needs them first.
 - **The scripts' own options must never clash with a native `ping` switch**
-  on any platform. They are `-LogFile`, `-Utc`, `-HideDrops`, `-?` and
-  `-Version` (PowerShell), and `--log`, `--utc`, `--hide-drops`, `--help`
-  and `--version` (Bash). The log, UTC and hide-drops options are taken out
-  of the arguments wherever they appear; everything else goes to `ping`.
+  on any platform. They are `-LogFile`, `-Utc`, `-NoOutages`, `-HideDrops`,
+  `-?` and `-Version` (PowerShell), and `--log`, `--utc`, `--no-outages`,
+  `--hide-drops`, `--help` and `--version` (Bash). All but help and version
+  are taken out of the arguments wherever they appear; everything else goes
+  to `ping`.
 - **The one addition to `ping`'s arguments** is `-O` on Linux, so lost
   replies get a line (see [Lost replies on Linux](#lost-replies-on-linux)).
 - **PowerShell: no `param()` block and no `[CmdletBinding()]`.** Declared
@@ -88,6 +91,32 @@ Windows and macOS `ping` print a line for every lost reply. Linux (iputils)
 `ping` prints nothing unless given `-O`, so both scripts add `-O` when `ping -V`
 reports iputils s20121221 or later. `--hide-drops` / `-HideDrops` turns this
 off. A second `-O`, if the user passed one too, is harmless.
+
+### Outages
+
+Each stamped probe line is classified. A line with a round-trip time or a TTL
+(`time=`, `time<`, `TTL=`, case-insensitive) is a reply; anything else is a
+lost reply. Watch out for Windows' `Reply from X: Destination host
+unreachable.`, which starts like a reply but is a loss. When a reply follows
+one or more lost replies, an outage line follows it:
+
+```text
+<timestamp> *** Outage: 3 replies lost over 9.0 s, from 05:35:40
+```
+
+The duration runs from the first lost reply's timestamp to the reply's. If
+replies are still being lost when the summary starts, the line is printed just
+before the blank line, timestamped now and ending in ` (no reply since)`.
+
+Classifying means reading `ping`'s text, which is localized. `TTL=` is the
+same in every language Windows `ping` speaks, but localized IPv6 replies have
+neither `TTL=` nor `time`. The rule that keeps this safe: **an outage is only
+reported after a reply has been recognized**. Either a reply ends the outage,
+or one was seen earlier in the run for the end-of-run line. Output that can't
+be classified therefore never produces a false outage.
+
+Bash's `stamp` also sets `STAMP_MS` (milliseconds since the epoch) on every
+timestamp path, for the duration; PowerShell keeps `[datetime]` values.
 
 ### Logging
 
@@ -170,6 +199,13 @@ Things the tests rely on, which are easy to break:
   Ctrl+C there by hand after changing how Ctrl+C is handled.
 - **The PowerShell tests count an unexpected error as a failure**, through a
   script-level `trap`. Without it, a broken test would be skipped silently.
+- **Outages need lost replies**, which a real network won't produce on
+  demand. `tests/fake-ping.sh` plays scripted output; the Bash tests and the
+  PowerShell tests on Linux and macOS put it first in `PATH` as `ping`. The
+  PowerShell script always runs `System32\PING.EXE` on Windows, so there
+  `tests/feed-lines.ps1` loads the script's functions and feeds them the same
+  scripted lines. Add new scenarios to `fake-ping.sh`; both test suites read
+  them from there.
 
 ## Publishing a version
 

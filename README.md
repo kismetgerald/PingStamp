@@ -101,6 +101,7 @@ The script's own options:
 | --- | --- |
 | `-LogFile <path>` | Also append every line to a log file (see [Keeping a log](#keeping-a-log)). `-LogFile:<path>` also works |
 | `-Utc` | Timestamps in UTC instead of local time |
+| `-NoOutages` | Don't print outage lines (see [Outages](#outages)) |
 | `-HideDrops` | On Linux, don't report lost replies (see [Lost replies](#lost-replies)). No effect elsewhere |
 | `-?` | Show help. `Get-Help .\Invoke-PingStamp.ps1 -Full` shows all of it |
 | `-Version` | Show the script version (use it on its own) |
@@ -120,6 +121,7 @@ The script's own options:
 | --- | --- |
 | `--log FILE` | Also append every line to a log file (see [Keeping a log](#keeping-a-log)). `--log=FILE` also works |
 | `--utc` | Timestamps in UTC instead of local time |
+| `--no-outages` | Don't print outage lines (see [Outages](#outages)) |
 | `--hide-drops` | On Linux, don't report lost replies (see [Lost replies](#lost-replies)). No effect elsewhere |
 | `--help` | Show help (first argument only) |
 | `--version` | Show the script version (first argument only) |
@@ -155,6 +157,30 @@ reply should produce a line.
   Use `--hide-drops` / `-HideDrops` to turn this off. The last request of a
   `-c` run is not reported this way, because `ping` exits right after sending
   it; it shows only in the statistics.
+
+### Outages
+
+When replies come back after being lost, PingStamp adds a line that sums up
+the outage, so you don't have to count timestamps:
+
+```text
+2026-10-13 05:35:40:020 EDT Request timed out.
+2026-10-13 05:35:44:021 EDT Request timed out.
+2026-10-13 05:35:48:023 EDT Request timed out.
+2026-10-13 05:35:49:030 EDT Reply from 192.168.1.10: bytes=32 time=4ms TTL=127
+2026-10-13 05:35:49:030 EDT *** Outage: 3 replies lost over 9.0 s, from 05:35:40
+```
+
+The times are when `ping` *reported* each lost reply, which is a little after
+it was sent. If replies are still being lost when `ping` finishes, or when you
+press Ctrl+C, the line comes just before the statistics and ends in
+`(no reply since)`. Search a log for `*** Outage` to find every outage.
+
+To spot a lost reply, PingStamp reads `ping`'s text: a line with a round-trip
+time or a TTL is a reply, and any other line is a lost reply. Outage lines
+appear only once a reply has been recognized, so output it can't read (in some
+languages) never produces a false outage. Use `--no-outages` / `-NoOutages` to
+turn them off.
 
 ## Good to know
 

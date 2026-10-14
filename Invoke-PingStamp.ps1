@@ -44,6 +44,12 @@ https://github.com/kismetgerald/PingStamp/blob/main/CHANGELOG.md
     the script adds -O, which prints "no answer yet for icmp_seq=N" instead.
     Use -HideDrops to turn that off; it has no effect elsewhere.
 
+    Outages: when replies come back after being lost, a line such as
+        ... *** Outage: 3 replies lost over 9.0 s, from 05:35:40
+    follows. If replies are still being lost at the end, the line comes just
+    before the statistics, ending in "(no reply since)". Use -NoOutages to
+    turn these lines off.
+
     Timestamps use local time. Use -Utc for UTC instead.
 
     To keep a log, use -LogFile <path>. Every line, timestamped as on screen,
@@ -110,8 +116,9 @@ https://github.com/kismetgerald/PingStamp/blob/main/CHANGELOG.md
     (-Verbose, -WarningAction, ...), would capture native ping switches such
     as -t, -v, -w and -i.
 
-    The script's own options are -LogFile, -Utc, -HideDrops and -Version.
-    Exact names like these can't clash with ping's single-letter switches.
+    The script's own options are -LogFile, -Utc, -NoOutages, -HideDrops and
+    -Version. Exact names like these can't clash with ping's single-letter
+    switches.
 
     Exit code is ping's own exit code; 2 for a usage error or a log file that
     can't be written.
@@ -126,6 +133,10 @@ $script:OnWindows = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 $script:Section = 'Header'
 $script:ZoneAbbreviations = @{}
 $script:Utc = $false
+$script:ShowOutages = $true
+$script:Lost = 0             # lost replies in the current outage
+$script:LostSince = $null    # [datetime] of the first of them
+$script:SeenReply = $false
 
 function Get-ZoneAbbreviation {
     # Returns the local time zone abbreviation (e.g. EDT) in effect at $Date.
@@ -193,20 +204,54 @@ function Get-ZoneAbbreviation {
     $abbreviation
 }
 
-function Get-Timestamp {
-    if ($script:Utc) {
-        $now = [datetime]::UtcNow
-        $zone = 'UTC'
+function Get-Now {
+    if ($script:Utc) { [datetime]::UtcNow } else { [datetime]::Now }
+}
+
+function Format-Timestamp {
+    param([datetime] $Date)
+    $zone = if ($script:Utc) { 'UTC' } else { Get-ZoneAbbreviation -Date $Date }
+    # Invariant culture: ':' in a format string is the culture's time separator.
+    '{0} {1}' -f $Date.ToString('yyyy-MM-dd HH:mm:ss:fff', [cultureinfo]::InvariantCulture), $zone
+}
+
+function Format-OutageLine {
+    # "<timestamp> *** Outage: 3 replies lost over 9.0 s, from 05:35:40"
+    param([datetime] $Now, [string] $Suffix)
+    $noun = if ($script:Lost -eq 1) { 'reply' } else { 'replies' }
+    $culture = [cultureinfo]::InvariantCulture
+    '{0} *** Outage: {1} {2} lost over {3} s, from {4}{5}' -f (Format-Timestamp -Date $Now),
+        $script:Lost, $noun, ($Now - $script:LostSince).TotalSeconds.ToString('0.0', $culture),
+        $script:LostSince.ToString('HH:mm:ss', $culture), $Suffix
+}
+
+function Trace-Outage {
+    # Tracks lost replies; returns an outage line when replies come back.
+    # A probe line with a round-trip time or a TTL is a reply; any other
+    # probe line ("Request timed out.", "no answer yet ...", "Destination
+    # host unreachable.") is a lost reply. That means reading ping's text,
+    # which is localized, so an outage is reported only once a reply has
+    # been recognized: output this can't read never produces a false outage.
+    # TTL= is the same in every language Windows ping speaks.
+    param([string] $Line, [datetime] $Now)
+
+    if ($Line -match 'ttl=|time[=<]') {
+        if ($script:Lost -gt 0) {
+            Format-OutageLine -Now $Now -Suffix ''
+            $script:Lost = 0
+        }
+        $script:SeenReply = $true
     }
     else {
-        $now = [datetime]::Now
-        $zone = Get-ZoneAbbreviation -Date $now
+        if ($script:Lost -eq 0) { $script:LostSince = $Now }
+        $script:Lost++
     }
-    # Invariant culture: ':' in a format string is the culture's time separator.
-    '{0} {1}' -f $now.ToString('yyyy-MM-dd HH:mm:ss:fff', [cultureinfo]::InvariantCulture), $zone
 }
 
 function Format-PingLine {
+    # Returns the line, timestamped if it needs one, followed by an outage
+    # line when one is due.
+    #
     # Native ping output has three parts: a header line, one line per probe,
     # and a summary that starts after a blank line. Only probe lines get a
     # timestamp. Left alone inside the probe section: indented lines, which
@@ -223,9 +268,20 @@ function Format-PingLine {
             $Line
         }
         'Probes' {
-            if ($blank) { $script:Section = 'Summary'; $Line }
+            if ($blank) {
+                # Replies were still being lost when the statistics began.
+                if ($script:ShowOutages -and $script:SeenReply -and $script:Lost -gt 0) {
+                    Format-OutageLine -Now (Get-Now) -Suffix ' (no reply since)'
+                }
+                $script:Section = 'Summary'
+                $Line
+            }
             elseif ($Line -match '^\s' -or $Line -clike 'PING *') { $Line }
-            else { '{0} {1}' -f (Get-Timestamp), $Line }
+            else {
+                $now = Get-Now
+                '{0} {1}' -f (Format-Timestamp -Date $now), $Line
+                if ($script:ShowOutages) { Trace-Outage -Line $Line -Now $now }
+            }
         }
         'Summary' {
             # Windows ping -t prints interim statistics on Ctrl+Break, then
@@ -250,8 +306,8 @@ function ConvertTo-ArgumentString {
 }
 
 function Write-LogLine {
-    # Appends a line to the -LogFile log, if there is one.
-    param([string] $Line)
+    # Appends lines to the -LogFile log, if there is one.
+    param([string[]] $Line)
     if ($script:LogPath) {
         Add-Content -LiteralPath $script:LogPath -Value $Line -Encoding UTF8 -ErrorAction Stop
     }
@@ -266,15 +322,18 @@ if ($args.Count -eq 1 -and "$($args[0])" -eq '-Version') {
     exit 0
 }
 
-# -LogFile, -Utc and -HideDrops are this script's own options: take them out
-# of the arguments, which are otherwise all for ping. They may appear
-# anywhere. "-LogFile:path" arrives as "-LogFile:" followed by the path.
+# -LogFile, -Utc, -NoOutages and -HideDrops are this script's own options:
+# take them out of the arguments, which are otherwise all for ping. They may
+# appear anywhere. "-LogFile:path" arrives as "-LogFile:" followed by the path.
 $script:LogPath = $null
 $hideDrops = $false
 $remaining = @()
 for ($i = 0; $i -lt $args.Count; $i++) {
     if ("$($args[$i])" -eq '-Utc') {
         $script:Utc = $true
+    }
+    elseif ("$($args[$i])" -eq '-NoOutages') {
+        $script:ShowOutages = $false
     }
     elseif ("$($args[$i])" -eq '-HideDrops') {
         $hideDrops = $true
@@ -293,7 +352,8 @@ for ($i = 0; $i -lt $args.Count; $i++) {
 }
 
 if ($remaining.Count -eq 0) {
-    $Host.UI.WriteErrorLine('Usage: Invoke-PingStamp.ps1 [-LogFile <path>] [-Utc] [-HideDrops] [ping options] <hostname | IPv4 address>')
+    $Host.UI.WriteErrorLine('Usage: Invoke-PingStamp.ps1 [-LogFile <path>] [-Utc] [-NoOutages] [-HideDrops]')
+    $Host.UI.WriteErrorLine('                            [ping options] <hostname | IPv4 address>')
     $Host.UI.WriteErrorLine('All other arguments are passed to ping. For details, run:')
     $Host.UI.WriteErrorLine("  Get-Help '$PSCommandPath' -Full")
     exit 2
@@ -383,7 +443,7 @@ try {
         $logged = $false
         $pending = $process.StandardOutput.ReadLine()
         if ($null -eq $pending) { break }
-        $formatted = Format-PingLine -Line $pending
+        $formatted = @(Format-PingLine -Line $pending)
         if ($sectionBefore -eq 'Probes' -and $script:Section -eq 'Summary') {
             # This blank line is the first thing ping prints after Ctrl+C.
             # PowerShell's own Ctrl+C handling lags slightly behind; pausing
@@ -426,14 +486,14 @@ finally {
                 # yet, format it from the start.
                 if ($null -eq $formatted) {
                     $script:Section = $sectionBefore
-                    $formatted = Format-PingLine -Line $pending
+                    $formatted = @(Format-PingLine -Line $pending)
                 }
-                $Host.UI.WriteLine($formatted)
+                foreach ($out in $formatted) { $Host.UI.WriteLine($out) }
                 if (-not $logged) { Write-LogLine -Line $formatted }
             }
             while ($null -ne ($line = $process.StandardOutput.ReadLine())) {
-                $formatted = Format-PingLine -Line $line
-                $Host.UI.WriteLine($formatted)
+                $formatted = @(Format-PingLine -Line $line)
+                foreach ($out in $formatted) { $Host.UI.WriteLine($out) }
                 Write-LogLine -Line $formatted
             }
         }

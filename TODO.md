@@ -38,9 +38,13 @@ user-visible changes in [CHANGELOG.md](CHANGELOG.md).
 
 - [x] **6. UTC timestamps:** `--utc` / `-Utc`, for matching logs across
   sites and time zones. *Done.*
-- [ ] **7. Outage summary.** When replies return after failures, print one
+- [x] **7. Outage summary.** When replies return after failures, print one
   line such as `outage 05:35:40 -> 05:35:52 (12 s, 12 lost)`. This needs to
-  recognize reply text, so it works with English output only.
+  recognize reply text, so it works with English output only. *Done: on by
+  default (`--no-outages` / `-NoOutages`), format `*** Outage: 3 replies
+  lost over 9.0 s, from 05:35:40`. Replies are recognized by `TTL=` or a
+  round-trip time, so most localized output works too, and nothing is
+  reported until a reply has been recognized.*
 - [ ] **8. PowerShell objects:** `-AsObject` emits `Timestamp` (`[datetime]`)
   and `Line`, for `Where-Object` time filters and `Export-Csv`.
 - [ ] **9. Release v0.0.3** (pre-release).
