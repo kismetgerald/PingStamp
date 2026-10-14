@@ -48,7 +48,7 @@ user-visible changes in [CHANGELOG.md](CHANGELOG.md).
 - [x] **8. PowerShell objects:** `-AsObject` emits `Timestamp` (`[datetime]`)
   and `Line`, for `Where-Object` time filters and `Export-Csv`. *Done, with a
   `Type` property as well (`Header`, `Probe`, `Outage`, `Summary`).*
-- [ ] **9. Release v0.0.3** (pre-release).
+- [x] **9. Release v0.0.3** (pre-release).
 
 ## Before v0.1.0 (first beta)
 
